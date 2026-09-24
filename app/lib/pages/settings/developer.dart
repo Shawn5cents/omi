@@ -1455,6 +1455,19 @@ class _DeveloperSettingsPageState extends State<_DeveloperSettingsPageView> {
                           onToggle: provider.onDaySummaryToggled,
                           controller: provider.webhookDaySummary,
                         ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Divider(color: Colors.grey.shade800, height: 1),
+                        ),
+                        // Omi hardware button gestures
+                        _buildWebhookItem(
+                          title: 'Omi button events',
+                          description: 'Forward single, double, and long taps while keeping native Omi actions enabled',
+                          icon: FontAwesomeIcons.handPointer,
+                          isEnabled: provider.buttonEventToggled,
+                          onToggle: provider.onButtonEventToggled,
+                          controller: provider.webhookButtonEvent,
+                        ),
                       ],
                     ),
                   ),
