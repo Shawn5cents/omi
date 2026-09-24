@@ -6,6 +6,7 @@ project(bap_unicast_server)
 
 target_sources(app PRIVATE
   src/main.c
+  src/pdm_mic.c
 )
 
 zephyr_library_include_directories(${ZEPHYR_BASE}/samples/bluetooth)
