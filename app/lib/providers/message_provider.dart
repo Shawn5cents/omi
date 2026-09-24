@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import 'package:omi/backend/http/api/apps.dart';
+import 'package:omi/backend/http/api/chatgpt_wearable.dart';
 import 'package:omi/backend/http/api/messages.dart';
 import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
@@ -579,11 +580,13 @@ class MessageProvider extends ChangeNotifier {
       return;
     }
 
+    final useChatGptWearable = playResponseAudio && SharedPreferencesUtil().wearableAssistantTarget == 1;
+
     var currentAppId = appProvider?.selectedChatAppId;
     if (currentAppId == 'no_selected') {
       currentAppId = null;
     }
-    String chatTargetId = currentAppId ?? 'omi';
+    String chatTargetId = useChatGptWearable ? 'chatgpt_wearable' : (currentAppId ?? 'omi');
     bool isPersonaChat = false;
 
     PlatformManager.instance.analytics.chatVoiceInputUsed(chatTargetId: chatTargetId, isPersonaChat: isPersonaChat);
@@ -600,11 +603,28 @@ class MessageProvider extends ChangeNotifier {
     // path (capture_provider). The chat-screen mic input does not pass
     // playResponseAudio=true.
     final String playbackMessageId = message.id;
-    if (playResponseAudio) {
+    if (playResponseAudio && !useChatGptWearable) {
       await OmiVoicePlaybackService.instance.beginResponse(messageId: playbackMessageId);
     }
 
     try {
+      if (useChatGptWearable) {
+        final result = await sendChatGptWearableVoice(
+          file: file,
+          codec: codec ?? BleAudioCodec.opus,
+        );
+        message.text = result.answer;
+        if (onFirstChunkRecived != null) {
+          onFirstChunkRecived();
+        }
+        if (playResponseAudio) {
+          await OmiVoicePlaybackService.instance.speakLocalResponse(result.answer);
+        }
+        completeChat(ProductOutcome.success);
+        notifyListeners();
+        return;
+      }
+
       bool firstChunkRecieved = false;
       await for (var chunk in sendVoiceMessageStreamServer([file])) {
         if (!firstChunkRecieved &&
