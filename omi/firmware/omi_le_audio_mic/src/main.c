@@ -228,7 +228,7 @@ static void audio_timer_timeout(struct k_work *work)
 		net_buf_add_mem(buf, audio_buf, sizeof(audio_buf));
 #endif
 
-		int ret = bt_bap_stream_send(stream, buf, get_and_incr_seq_num(stream));
+		ret = bt_bap_stream_send(stream, buf, get_and_incr_seq_num(stream));
 		if (ret < 0) {
 			printk("ISO send failed: %d\n", ret);
 			net_buf_unref(buf);
@@ -303,11 +303,6 @@ static int lc3_config(struct bt_conn *conn, const struct bt_bap_ep *ep, enum bt_
 
 	*pref = qos_pref;
 
-#if defined(CONFIG_LIBLC3)
-	/* Nothing to free as static memory is used */
-	lc3_decoder = NULL;
-#endif
-
 	return 0;
 }
 
@@ -318,11 +313,6 @@ static int lc3_reconfig(struct bt_bap_stream *stream, enum bt_audio_dir dir,
 	printk("ASE Codec Reconfig: stream %p\n", stream);
 
 	print_codec_cfg(codec_cfg);
-
-#if defined(CONFIG_LIBLC3)
-	/* Nothing to free as static memory is used */
-	lc3_decoder = NULL;
-#endif
 
 	*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_UNSUPPORTED, BT_BAP_ASCS_REASON_NONE);
 
@@ -469,70 +459,6 @@ static const struct bt_bap_unicast_server_cb unicast_server_cb = {
 	.release = lc3_release,
 };
 
-
-#if defined(CONFIG_LIBLC3)
-
-static void stream_recv_lc3_codec(struct bt_bap_stream *stream,
-				  const struct bt_iso_recv_info *info,
-				  struct net_buf *buf)
-{
-	const uint8_t *in_buf;
-	uint8_t err = -1;
-	const int octets_per_frame = buf->len / frames_per_sdu;
-
-	if (lc3_decoder == NULL) {
-		printk("LC3 decoder not setup, cannot decode data.\n");
-		return;
-	}
-
-	if ((info->flags & BT_ISO_FLAGS_VALID) == 0) {
-		printk("Bad packet: 0x%02X\n", info->flags);
-
-		in_buf = NULL;
-	} else {
-		in_buf = buf->data;
-	}
-
-	/* This code is to demonstrate the use of the LC3 codec. On an actual implementation
-	 * it might be required to offload the processing to another task to avoid blocking the
-	 * BT stack.
-	 */
-	for (int i = 0; i < frames_per_sdu; i++) {
-
-		int offset = 0;
-
-		err = lc3_decode(lc3_decoder, in_buf + offset, octets_per_frame,
-				 LC3_PCM_FORMAT_S16, audio_buf, 1);
-
-		if (in_buf != NULL) {
-			offset += octets_per_frame;
-		}
-	}
-
-	printk("RX stream %p len %u\n", stream, buf->len);
-
-	if (err == 1) {
-		printk("  decoder performed PLC\n");
-		return;
-
-	} else if (err < 0) {
-		printk("  decoder failed - wrong parameters?\n");
-		return;
-	}
-}
-
-#else
-
-static void stream_recv(struct bt_bap_stream *stream,
-			const struct bt_iso_recv_info *info,
-			struct net_buf *buf)
-{
-	if (info->flags & BT_ISO_FLAGS_VALID) {
-		printk("Incoming audio on stream %p len %u\n", stream, buf->len);
-	}
-}
-
-#endif
 
 static void stream_stopped(struct bt_bap_stream *stream, uint8_t reason)
 {
