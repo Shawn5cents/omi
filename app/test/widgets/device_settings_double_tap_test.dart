@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/l10n/app_localizations.dart';
+import 'package:omi/models/omi_plus_settings.dart';
 import 'package:omi/pages/settings/device_settings.dart';
 import 'package:omi/providers/device_provider.dart';
 
@@ -94,6 +95,36 @@ void main() {
 
     expect(find.text('Mute / Unmute'), findsNWidgets(2));
     expect(find.text('Pause/Resume Recording'), findsNothing);
+  });
+
+  testWidgets('Omi+ is off by default and provider selection persists when enabled', (tester) async {
+    final provider = _StubDeviceProvider(
+      device: BtDevice(id: 'omi-1', name: 'Omi', type: DeviceType.omi, rssi: -40),
+    );
+    addTearDown(provider.dispose);
+
+    await tester.pumpWidget(_app(provider));
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+
+    expect(SharedPreferencesUtil().omiPlusEnabled, isFalse);
+    expect(SharedPreferencesUtil().omiPlusAssistantTarget, OmiPlusAssistantTarget.omi);
+    expect(find.byKey(const Key('omi_plus_toggle')), findsOneWidget);
+    expect(find.byKey(const Key('omi_plus_assistant_target')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('omi_plus_toggle')));
+    await tester.pumpAndSettle();
+
+    expect(SharedPreferencesUtil().omiPlusEnabled, isTrue);
+    expect(find.byKey(const Key('omi_plus_assistant_target')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('omi_plus_assistant_target')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ChatGPT').last);
+    await tester.pumpAndSettle();
+
+    expect(SharedPreferencesUtil().omiPlusAssistantTarget, OmiPlusAssistantTarget.chatgpt);
   });
 
   testWidgets('Find triggers one guarded request for a connected Omi', (tester) async {

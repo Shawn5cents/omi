@@ -11,10 +11,17 @@ Date: 2026-09-24
 - Clean Omi+ worktree created from current upstream.
 - Full roadmap documented.
 - Architecture and ownership boundaries documented.
-- Initial additive settings model implemented.
+- Additive Omi+ settings persist in SharedPreferences and survive sign-out as device behavior.
 - Provider targets defined: Omi, Auto, ChatGPT, Claude, Gemini, Local, All.
 - Defaults fail closed to stock Omi and Omi+ disabled.
-- Unit tests: 3/3 PASS.
+- Device Settings exposes Omi+ only for Omi hardware; Local is intentionally not selectable yet.
+- Explicit device-button voice requests can use Omi STT -> Omi+ router -> Grizzy -> subscription client -> Omi voice playback.
+- Ambient Omi capture, summaries, memories, tasks, apps, sync and normal chat remain on stock Omi paths.
+- Grizzy read-only assistant branch: feature/omi-plus-assistant at d59346f.
+- Grizzy verification: 74/74 tests PASS and npm run check PASS.
+- Mobile targeted gate: 24/24 tests PASS.
+- Static analysis of the new assistant API, message provider and Device Settings: PASS.
+- Android dev APK compile: PASS after standard Omi setup/codegen.
 
 ## Existing related work preserved
 - /data/repos/omi-chatgpt: non-destructive Omi -> ChatGPT MCP bridge.
@@ -22,7 +29,7 @@ Date: 2026-09-24
 - /data/repos/omi-le-audio: experimental LE Audio firmware; remains separate and non-default.
 
 ## Next vertical slice
-Persist Omi+ settings in SharedPreferences, expose them in Device Settings, and route one explicit wearable request to a Grizzy adapter while leaving stock Omi ambient capture unchanged.
+Deploy the authenticated Grizzy assistant route, validate one real subscription-backed end-to-end request, then replace Omi cloud transcription with the first on-device STT candidate behind the same routing contract.
 
 ## Release gate
 Do not merge into main until:

@@ -13,6 +13,7 @@ import 'package:omi/pages/conversations/auto_sync_page.dart';
 import 'package:omi/pages/conversations/sync_page.dart';
 import 'package:omi/pages/home/firmware_update.dart';
 import 'package:omi/pages/home/omiglass_ota_update.dart';
+import 'package:omi/models/omi_plus_settings.dart';
 import 'package:omi/pages/onboarding/interactive_device_onboarding/interactive_device_onboarding_wrapper.dart';
 import 'package:omi/pages/settings/device/device_control_sheets.dart';
 import 'package:omi/pages/settings/device/device_info_groups.dart';
@@ -75,6 +76,7 @@ class _DeviceSettingsState extends State<DeviceSettings> {
 
   bool _autoSyncOfflineRecordings = SharedPreferencesUtil().autoSyncOfflineRecordings;
   bool _omiButtonActionsEnabled = SharedPreferencesUtil().omiButtonActionsEnabled;
+  bool _omiPlusEnabled = SharedPreferencesUtil().omiPlusEnabled;
 
   Future<String>? _rayBanMetaCameraStatusFuture;
   String? _rayBanMetaCameraStatusDeviceId;
@@ -383,6 +385,107 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     _leavePage();
   }
 
+  String _omiPlusAssistantLabel(OmiPlusAssistantTarget target) {
+    switch (target) {
+      case OmiPlusAssistantTarget.omi:
+        return 'Omi';
+      case OmiPlusAssistantTarget.auto:
+        return 'Auto';
+      case OmiPlusAssistantTarget.chatgpt:
+        return 'ChatGPT';
+      case OmiPlusAssistantTarget.claude:
+        return 'Claude';
+      case OmiPlusAssistantTarget.gemini:
+        return 'Gemini';
+      case OmiPlusAssistantTarget.local:
+        return 'Local';
+      case OmiPlusAssistantTarget.all:
+        return 'Ask all';
+    }
+  }
+
+  void _showOmiPlusAssistantSheet() {
+    const targets = <OmiPlusAssistantTarget>[
+      OmiPlusAssistantTarget.omi,
+      OmiPlusAssistantTarget.auto,
+      OmiPlusAssistantTarget.chatgpt,
+      OmiPlusAssistantTarget.claude,
+      OmiPlusAssistantTarget.gemini,
+      OmiPlusAssistantTarget.all,
+    ];
+    final current = SharedPreferencesUtil().omiPlusAssistantTarget;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: OmiColors.surface1,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: OmiSpacing.sm),
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(OmiSpacing.md, OmiSpacing.sm, OmiSpacing.md, OmiSpacing.xs),
+                child: Text('Omi+ assistant', style: OmiType.title3),
+              ),
+              for (final target in targets)
+                ListTile(
+                  title: Text(_omiPlusAssistantLabel(target)),
+                  subtitle: target == OmiPlusAssistantTarget.omi
+                      ? const Text('Use the stock Omi assistant')
+                      : target == OmiPlusAssistantTarget.auto
+                          ? const Text('Use the first available subscription assistant')
+                          : target == OmiPlusAssistantTarget.all
+                              ? const Text('Ask ChatGPT, Claude, and Gemini')
+                              : Text('Route explicit button questions to ${_omiPlusAssistantLabel(target)}'),
+                  trailing: current == target ? const Icon(Icons.check) : null,
+                  onTap: () {
+                    setState(() => SharedPreferencesUtil().omiPlusAssistantTarget = target);
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _omiPlusGroup(BtDevice? device) {
+    if (device?.type != DeviceType.omi) return const SizedBox.shrink();
+
+    final target = SharedPreferencesUtil().omiPlusAssistantTarget;
+    return OmiSettingsGroup(
+      header: 'Omi+',
+      children: [
+        OmiSettingsRow.toggle(
+          key: const Key('omi_plus_toggle'),
+          leading: const Icon(Icons.auto_awesome),
+          title: 'Omi+ assistant',
+          subtitle: 'Keep Omi features and route explicit button questions through Grizzy',
+          value: _omiPlusEnabled,
+          onChanged: (value) {
+            setState(() => _omiPlusEnabled = value);
+            SharedPreferencesUtil().omiPlusEnabled = value;
+            if (!value) {
+              _maybeProvider<CaptureProvider>(context, listen: false)?.cancelActiveVoiceSession();
+            }
+          },
+        ),
+        if (_omiPlusEnabled)
+          OmiSettingsRow(
+            key: const Key('omi_plus_assistant_target'),
+            leading: const Icon(Icons.route),
+            title: 'Assistant',
+            value: _omiPlusAssistantLabel(target),
+            onTap: _showOmiPlusAssistantSheet,
+            showChevron: true,
+          ),
+      ],
+    );
+  }
+
   // Sections.
 
   Widget _customizationGroup(BtDevice? device, DeviceProvider provider) {
@@ -584,6 +687,10 @@ class _DeviceSettingsState extends State<DeviceSettings> {
           else
             const DeviceDisconnectedCard(),
           gap,
+          if ((paired ?? connected)?.type == DeviceType.omi) ...[
+            _omiPlusGroup(paired ?? connected),
+            gap,
+          ],
           _deviceGroup(provider),
           gap,
           DeviceInfoGroups(

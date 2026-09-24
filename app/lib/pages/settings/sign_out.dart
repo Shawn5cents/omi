@@ -28,6 +28,10 @@ const Set<String> kPreferencesKeptOnSignOut = {
   'lastKnownFirmwareVersion',
   'doubleTapAction',
   'omiButtonActionsEnabled',
+  'omiPlusEnabled',
+  'omiPlusAssistantTarget',
+  'omiPlusLocalSttEnabled',
+  'omiPlusLocalTtsEnabled',
   'companionAssociationPrompted',
   'autoSyncOfflineRecordings',
   // Display and phone behaviour

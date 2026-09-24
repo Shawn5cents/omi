@@ -15,8 +15,10 @@ import 'package:uuid/uuid.dart';
 
 import 'package:omi/backend/http/api/apps.dart';
 import 'package:omi/backend/http/api/messages.dart';
+import 'package:omi/backend/http/api/omi_plus_assistant.dart';
 import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
+import 'package:omi/models/omi_plus_settings.dart';
 import 'package:omi/services/voice_playback/omi_voice_playback_service.dart';
 import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
@@ -620,11 +622,18 @@ class MessageProvider extends ChangeNotifier {
       return;
     }
 
+    final preferences = SharedPreferencesUtil();
+    final omiPlusTarget = preferences.omiPlusAssistantTarget;
+    final useOmiPlus = playResponseAudio &&
+        preferences.omiPlusEnabled &&
+        omiPlusTarget != OmiPlusAssistantTarget.omi &&
+        omiPlusTarget != OmiPlusAssistantTarget.local;
+
     var currentAppId = appProvider?.selectedChatAppId;
     if (currentAppId == 'no_selected') {
       currentAppId = null;
     }
-    String chatTargetId = currentAppId ?? 'omi';
+    String chatTargetId = useOmiPlus ? 'omi_plus_${omiPlusTarget.name}' : (currentAppId ?? 'omi');
     bool isPersonaChat = false;
 
     PlatformManager.instance.analytics.chatVoiceInputUsed(chatTargetId: chatTargetId, isPersonaChat: isPersonaChat);
@@ -646,6 +655,29 @@ class MessageProvider extends ChangeNotifier {
     }
 
     try {
+      if (useOmiPlus) {
+        // v0.1 deliberately reuses Omi's separate transcription endpoint.
+        // Phase 2 swaps this call for an on-device STT engine without changing
+        // the assistant-routing contract.
+        final transcript = await transcribeVoiceMessage([file]);
+        final result = await sendOmiPlusAssistant(text: transcript, target: omiPlusTarget);
+        message.text = result.text;
+        if (onFirstChunkRecived != null) {
+          onFirstChunkRecived();
+        }
+        if (playResponseAudio) {
+          OmiVoicePlaybackService.instance.updateStreamingResponse(
+            messageId: playbackMessageId,
+            fullText: message.text,
+            isFinal: true,
+          );
+        }
+        completeChat(ProductOutcome.success);
+        setShowTypingIndicator(false);
+        notifyListeners();
+        return;
+      }
+
       bool firstChunkRecieved = false;
       await for (var chunk in sendVoiceMessageStreamServer([file])) {
         if (!firstChunkRecieved &&

@@ -15,6 +15,7 @@ import 'package:omi/backend/schema/memory.dart';
 import 'package:omi/backend/schema/message.dart';
 import 'package:omi/backend/schema/person.dart';
 import 'package:omi/models/custom_stt_config.dart';
+import 'package:omi/models/omi_plus_settings.dart';
 import 'package:omi/models/stt_provider.dart';
 import 'package:omi/services/capture/capture_policy.dart';
 import 'package:omi/utils/logger.dart';
@@ -565,6 +566,25 @@ class SharedPreferencesUtil {
   int get doubleTapAction => getInt('doubleTapAction');
 
   set doubleTapAction(int value) => saveInt('doubleTapAction', value);
+
+  // Omi+ is additive and disabled by default. These settings only affect
+  // explicit wearable assistant requests; ambient capture remains stock Omi.
+  bool get omiPlusEnabled => getBool('omiPlusEnabled');
+
+  set omiPlusEnabled(bool value) => saveBool('omiPlusEnabled', value);
+
+  OmiPlusAssistantTarget get omiPlusAssistantTarget =>
+      OmiPlusAssistantTarget.fromStorage(getString('omiPlusAssistantTarget'));
+
+  set omiPlusAssistantTarget(OmiPlusAssistantTarget value) => saveString('omiPlusAssistantTarget', value.name);
+
+  bool get omiPlusLocalSttEnabled => getBool('omiPlusLocalSttEnabled');
+
+  set omiPlusLocalSttEnabled(bool value) => saveBool('omiPlusLocalSttEnabled', value);
+
+  bool get omiPlusLocalTtsEnabled => getBool('omiPlusLocalTtsEnabled');
+
+  set omiPlusLocalTtsEnabled(bool value) => saveBool('omiPlusLocalTtsEnabled', value);
 
   // Keep backward compatibility
   bool get doubleTapPausesMuting => doubleTapAction == 1;
