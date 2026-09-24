@@ -566,6 +566,11 @@ class SharedPreferencesUtil {
 
   set doubleTapAction(int value) => saveInt('doubleTapAction', value);
 
+  // Wearable assistant target: 0 = Omi (default), 1 = ChatGPT standalone bridge.
+  int get wearableAssistantTarget => getInt('wearableAssistantTarget');
+
+  set wearableAssistantTarget(int value) => saveInt('wearableAssistantTarget', value);
+
   // Keep backward compatibility
   bool get doubleTapPausesMuting => doubleTapAction == 1;
 
