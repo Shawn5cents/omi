@@ -33,8 +33,8 @@ Future<ChatGptWearableResponse> sendChatGptWearableVoice({
     throw StateError('OMI_CHATGPT_TOKEN is not configured in this build');
   }
 
-  final request = http.MultipartRequest('POST', Uri.parse(baseUrl + '/v1/ask'))
-    ..headers['Authorization'] = 'Bearer ' + token
+  final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/v1/ask'))
+    ..headers['Authorization'] = 'Bearer $token'
     ..fields['codec'] = codec.toString()
     ..fields['session_id'] = sessionId
     ..files.add(await http.MultipartFile.fromPath('audio', file.path, filename: 'omi.bin'));
@@ -42,7 +42,7 @@ Future<ChatGptWearableResponse> sendChatGptWearableVoice({
   final streamed = await request.send().timeout(const Duration(seconds: 90));
   final response = await http.Response.fromStream(streamed);
   if (response.statusCode != 200) {
-    throw HttpException('ChatGPT wearable bridge failed (' + response.statusCode.toString() + ')');
+    throw HttpException('ChatGPT wearable bridge failed (${response.statusCode})');
   }
 
   final payload = jsonDecode(response.body);
