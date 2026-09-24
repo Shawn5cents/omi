@@ -166,6 +166,27 @@ Future<bool> updateUserGeolocation({required Geolocation geolocation}) async {
   return data.status == 'ok';
 }
 
+Future<bool> postDeveloperButtonEvent({
+  required String buttonEvent,
+  required String deviceId,
+  String? sessionId,
+}) async {
+  final body = <String, dynamic>{
+    'button_event': buttonEvent,
+    'device_id': deviceId,
+    'event_id': const Uuid().v4(),
+    'timestamp': DateTime.now().toUtc().toIso8601String(),
+    if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+  };
+  final response = await makeApiCall(
+    url: '${Env.apiBaseUrl}v1/users/developer/button-event',
+    headers: {'Content-Type': 'application/json'},
+    method: 'POST',
+    body: jsonEncode(body),
+  );
+  return response?.statusCode == 200;
+}
+
 Future<bool> setUserWebhookUrl({required String type, required String url}) async {
   var response = await makeApiCall(
     url: '${Env.apiBaseUrl}v1/users/developer/webhook/$type',

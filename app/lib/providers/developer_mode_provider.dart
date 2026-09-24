@@ -17,11 +17,13 @@ class DeveloperModeProvider extends BaseProvider {
   final TextEditingController webhookAudioBytesDelay = TextEditingController();
   final TextEditingController webhookWsAudioBytes = TextEditingController();
   final TextEditingController webhookDaySummary = TextEditingController();
+  final TextEditingController webhookButtonEvent = TextEditingController();
 
   bool conversationEventsToggled = false;
   bool transcriptsToggled = false;
   bool audioBytesToggled = false;
   bool daySummaryToggled = false;
+  bool buttonEventToggled = false;
 
   bool savingSettingsLoading = false;
 
@@ -69,6 +71,16 @@ class DeveloperModeProvider extends BaseProvider {
     notifyListeners();
   }
 
+  void onButtonEventToggled(bool value) {
+    buttonEventToggled = value;
+    if (!value) {
+      disableWebhook(type: 'button_event');
+    } else {
+      enableWebhook(type: 'button_event');
+    }
+    notifyListeners();
+  }
+
   void onDaySummaryToggled(bool value) {
     daySummaryToggled = value;
     if (!value) {
@@ -88,6 +100,7 @@ class DeveloperModeProvider extends BaseProvider {
     transcriptsToggled = res['realtime_transcript'];
     audioBytesToggled = res['audio_bytes'];
     daySummaryToggled = res['day_summary'];
+    buttonEventToggled = res['button_event'] ?? false;
     SharedPreferencesUtil().conversationEventsToggled = conversationEventsToggled;
     SharedPreferencesUtil().transcriptsToggled = transcriptsToggled;
     SharedPreferencesUtil().audioBytesToggled = audioBytesToggled;
@@ -140,6 +153,9 @@ class DeveloperModeProvider extends BaseProvider {
         webhookDaySummary.text = url;
         SharedPreferencesUtil().webhookDaySummary = url;
       }),
+      getUserWebhookUrl(type: 'button_event').then((url) {
+        webhookButtonEvent.text = url;
+      }),
     ]);
     // getUserWebhookUrl(type: 'audio_bytes_websocket').then((url) => webhookWsAudioBytes.text = url);
     setIsLoading(false);
@@ -177,6 +193,11 @@ class DeveloperModeProvider extends BaseProvider {
       setIsLoading(false);
       return;
     }
+    if (webhookButtonEvent.text.isNotEmpty && !isValidUrl(webhookButtonEvent.text)) {
+      AppSnackbar.showSnackbarError('Invalid button event webhook URL');
+      setIsLoading(false);
+      return;
+    }
     if (webhookDaySummary.text.isNotEmpty && !isValidUrl(webhookDaySummary.text)) {
       AppSnackbar.showSnackbarError(
         globalNavigatorKey.currentContext?.l10n.devModeInvalidDaySummaryWebhookUrl ?? 'Invalid day summary webhook URL',
@@ -198,10 +219,11 @@ class DeveloperModeProvider extends BaseProvider {
     var w2 = setUserWebhookUrl(type: 'realtime_transcript', url: webhookOnTranscriptReceived.text.trim());
     var w3 = setUserWebhookUrl(type: 'memory_created', url: webhookOnConversationCreated.text.trim());
     var w4 = setUserWebhookUrl(type: 'day_summary', url: webhookDaySummary.text.trim());
+    var w5 = setUserWebhookUrl(type: 'button_event', url: webhookButtonEvent.text.trim());
     // var w4 = setUserWebhookUrl(type: 'audio_bytes_websocket', url: webhookWsAudioBytes.text.trim());
     var webhooksSaved = false;
     try {
-      webhooksSaved = !(await Future.wait([w1, w2, w3, w4])).contains(false);
+      webhooksSaved = !(await Future.wait([w1, w2, w3, w4, w5])).contains(false);
       if (webhooksSaved) {
         prefs.webhookAudioBytes = webhookAudioBytes.text;
         prefs.webhookAudioBytesDelay = webhookAudioBytesDelay.text;
