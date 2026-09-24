@@ -85,6 +85,7 @@ class OmiVoicePlaybackService {
       await _fallbackTts.setSpeechRate(0.5);
       await _fallbackTts.setVolume(1.0);
       await _fallbackTts.setPitch(1.0);
+      await _fallbackTts.awaitSpeakCompletion(true);
     } catch (_) {}
   }
 
@@ -187,6 +188,29 @@ class OmiVoicePlaybackService {
     }
 
     _drainSynthesis();
+  }
+
+  /// Speak a standalone assistant reply using only the phone's local TTS.
+  /// This intentionally bypasses Omi's hosted TTS endpoint.
+  Future<void> speakLocalResponse(String text) async {
+    final cleaned = text.trim();
+    if (cleaned.isEmpty) return;
+
+    final mode = SharedPreferencesUtil().voiceResponseMode;
+    if (mode == 0) return;
+
+    await _ensureInitialized();
+    if (mode == 1 && !await _hasHeadphonesConnected()) return;
+
+    await interrupt();
+    await _activateSession();
+    try {
+      await _fallbackTts.speak(cleaned);
+    } catch (e) {
+      Logger.debug('local wearable TTS failed: $e');
+    } finally {
+      await _deactivateSession();
+    }
   }
 
   /// Immediately cancel all synthesis + playback.
