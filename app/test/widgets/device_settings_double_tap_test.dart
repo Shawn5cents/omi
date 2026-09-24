@@ -118,6 +118,12 @@ void main() {
 
     expect(SharedPreferencesUtil().omiPlusEnabled, isTrue);
     expect(find.byKey(const Key('omi_plus_assistant_target')), findsOneWidget);
+    expect(find.byKey(const Key('omi_plus_local_stt')), findsOneWidget);
+    expect(SharedPreferencesUtil().omiPlusLocalSttEnabled, isFalse);
+
+    await tester.tap(find.byKey(const Key('omi_plus_local_stt')));
+    await tester.pumpAndSettle();
+    expect(SharedPreferencesUtil().omiPlusLocalSttEnabled, isTrue);
 
     await tester.tap(find.byKey(const Key('omi_plus_assistant_target')));
     await tester.pumpAndSettle();

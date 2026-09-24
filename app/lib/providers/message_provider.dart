@@ -19,6 +19,7 @@ import 'package:omi/backend/http/api/omi_plus_assistant.dart';
 import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/models/omi_plus_settings.dart';
+import 'package:omi/services/omi_plus/omi_plus_command_transcription.dart';
 import 'package:omi/services/voice_playback/omi_voice_playback_service.dart';
 import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
@@ -659,7 +660,10 @@ class MessageProvider extends ChangeNotifier {
         // v0.1 deliberately reuses Omi's separate transcription endpoint.
         // Phase 2 swaps this call for an on-device STT engine without changing
         // the assistant-routing contract.
-        final transcript = await transcribeVoiceMessage([file]);
+        final transcript = await transcribeOmiPlusCommand(
+          file,
+          localEnabled: preferences.omiPlusLocalSttEnabled,
+        );
         final result = await sendOmiPlusAssistant(text: transcript, target: omiPlusTarget);
         message.text = result.text;
         if (onFirstChunkRecived != null) {

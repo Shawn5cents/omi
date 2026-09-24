@@ -23,10 +23,10 @@ Omi pendant + Omi app + local speech + Grizzy + subscription-backed ChatGPT/Clau
 
 ### Phase 2 - Local STT
 - Add speech engine interface.
-- Baseline stock Omi transcription.
-- Add Parakeet and Qwen3-ASR candidates through LiteRT.
-- Preserve cloud STT as fallback.
-- Measure word error rate, first-token latency, battery and thermals on Pixel.
+- Reuse and baseline Omi's existing on-device Whisper engine first.
+- Local mode is strict: never fall back to cloud STT without the user turning local mode off.
+- Benchmark Parakeet and Qwen3-ASR candidates through LiteRT behind the same interface.
+- Measure word error rate, command latency, battery and thermals on Pixel before changing the default local engine.
 
 ### Phase 3 - Local TTS
 - Add voice output interface.

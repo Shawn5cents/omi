@@ -482,6 +482,17 @@ class _DeviceSettingsState extends State<DeviceSettings> {
             onTap: _showOmiPlusAssistantSheet,
             showChevron: true,
           ),
+        if (_omiPlusEnabled)
+          OmiSettingsRow.toggle(
+            key: const Key('omi_plus_local_stt'),
+            leading: const Icon(Icons.mic),
+            title: 'Local speech recognition',
+            subtitle: 'Use the downloaded on-device Whisper model for Omi+ button requests only',
+            value: SharedPreferencesUtil().omiPlusLocalSttEnabled,
+            onChanged: (value) {
+              setState(() => SharedPreferencesUtil().omiPlusLocalSttEnabled = value);
+            },
+          ),
       ],
     );
   }
