@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:omi/backend/http/api/conversations.dart';
+import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/backend/schema/conversation.dart';
@@ -1226,6 +1227,23 @@ class CaptureController extends ChangeNotifier
             Uint8List.fromList(snapshot.sublist(0, 4).reversed.toList()).buffer,
           ).getUint32(0);
           Logger.debug("device button $buttonState");
+
+          // Forward semantic Omi gestures to the opt-in developer webhook without
+          // replacing or delaying the device's existing native action.
+          final developerGesture = switch (buttonState) {
+            1 => 'single_tap',
+            2 => 'double_tap',
+            3 => 'long_tap',
+            _ => null,
+          };
+          if (developerGesture != null) {
+            unawaited(
+              postDeveloperButtonEvent(buttonEvent: developerGesture, deviceId: deviceId).catchError((error) {
+                Logger.debug('Developer button event forward failed: $error');
+                return false;
+              }),
+            );
+          }
 
           // Intercept for interactive device onboarding
           if (deviceOnboardingProvider?.isOnboardingActive == true) {
