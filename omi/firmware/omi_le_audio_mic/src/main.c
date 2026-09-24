@@ -18,6 +18,8 @@
 #include <zephyr/bluetooth/audio/pacs.h>
 #include <zephyr/sys/byteorder.h>
 
+#include "pdm_mic.h"
+
 #define AVAILABLE_SINK_CONTEXT  (BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED | \
 				 BT_AUDIO_CONTEXT_TYPE_CONVERSATIONAL | \
 				 BT_AUDIO_CONTEXT_TYPE_MEDIA | \
@@ -34,8 +36,8 @@ NET_BUF_POOL_FIXED_DEFINE(tx_pool, CONFIG_BT_ASCS_MAX_ASE_SRC_COUNT,
 			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
 
 static const struct bt_audio_codec_cap lc3_codec_cap = BT_AUDIO_CODEC_CAP_LC3(
-	BT_AUDIO_CODEC_CAP_FREQ_ANY, BT_AUDIO_CODEC_CAP_DURATION_10,
-	BT_AUDIO_CODEC_CAP_CHAN_COUNT_SUPPORT(1), 40u, 120u, 1u,
+	BT_AUDIO_CODEC_CAP_FREQ_16KHZ, BT_AUDIO_CODEC_CAP_DURATION_10,
+	BT_AUDIO_CODEC_CAP_CHAN_COUNT_SUPPORT(1), 40u, 40u, 1u,
 	(BT_AUDIO_CONTEXT_TYPE_CONVERSATIONAL | BT_AUDIO_CONTEXT_TYPE_MEDIA));
 
 static struct bt_conn *default_conn;
@@ -101,14 +103,12 @@ static uint16_t get_and_incr_seq_num(const struct bt_bap_stream *stream)
 
 #include "lc3.h"
 
-#define MAX_SAMPLE_RATE         48000
 #define MAX_FRAME_DURATION_US   10000
-#define MAX_NUM_SAMPLES         ((MAX_FRAME_DURATION_US * MAX_SAMPLE_RATE) / USEC_PER_SEC)
 
-static int16_t audio_buf[MAX_NUM_SAMPLES];
-static lc3_decoder_t lc3_decoder;
-static lc3_decoder_mem_48k_t lc3_decoder_mem;
-static int frames_per_sdu;
+static int16_t audio_buf[OMI_LE_AUDIO_FRAME_SAMPLES];
+static lc3_encoder_t lc3_encoder;
+static lc3_encoder_mem_16k_t lc3_encoder_mem;
+static int octets_per_frame = 40;
 
 #endif
 
@@ -194,52 +194,48 @@ static void print_qos(const struct bt_audio_codec_qos *qos)
  */
 static void audio_timer_timeout(struct k_work *work)
 {
-	int ret;
-	static uint8_t buf_data[CONFIG_BT_ISO_TX_MTU];
-	static bool data_initialized;
-	struct net_buf *buf;
+	ARG_UNUSED(work);
 
-	if (!data_initialized) {
-		/* TODO: Actually encode some audio data */
-		for (size_t i = 0U; i < ARRAY_SIZE(buf_data); i++) {
-			buf_data[i] = (uint8_t)i;
-		}
-
-		data_initialized = true;
-	}
-
-	/* We configured the sink streams to be first in `streams`, so that
-	 * we can use `stream[i]` to select sink streams (i.e. streams with
-	 * data going to the server)
-	 */
 	for (size_t i = 0; i < configured_source_stream_count; i++) {
 		struct bt_bap_stream *stream = &source_streams[i].stream;
-
-		buf = net_buf_alloc(&tx_pool, K_FOREVER);
-		net_buf_reserve(buf, BT_ISO_CHAN_SEND_RESERVE);
-
-		net_buf_add_mem(buf, buf_data, ++source_streams[i].len_to_send);
-
-		ret = bt_bap_stream_send(stream, buf, get_and_incr_seq_num(stream));
-		if (ret < 0) {
-			printk("Failed to send audio data on streams[%zu] (%p): (%d)\n",
-			       i, stream, ret);
-			net_buf_unref(buf);
-		} else {
-			printk("Sending mock data with len %zu on streams[%zu] (%p)\n",
-			       source_streams[i].len_to_send, i, stream);
+		struct net_buf *buf = net_buf_alloc(&tx_pool, K_NO_WAIT);
+		if (buf == NULL) {
+			printk("No ISO TX buffer available\n");
+			continue;
 		}
 
-		if (source_streams[i].len_to_send >= source_streams[i].max_sdu) {
-			source_streams[i].len_to_send = 0;
+		net_buf_reserve(buf, BT_ISO_CHAN_SEND_RESERVE);
+
+#if defined(CONFIG_LIBLC3)
+		uint8_t encoded[120];
+		(void)omi_pdm_mic_get_frame(audio_buf, ARRAY_SIZE(audio_buf));
+
+		if (lc3_encoder == NULL) {
+			net_buf_unref(buf);
+			continue;
+		}
+
+		int ret = lc3_encode(lc3_encoder, LC3_PCM_FORMAT_S16, audio_buf, 1,
+				     octets_per_frame, encoded);
+		if (ret < 0) {
+			printk("LC3 encode failed: %d\n", ret);
+			net_buf_unref(buf);
+			continue;
+		}
+
+		net_buf_add_mem(buf, encoded, octets_per_frame);
+#else
+		net_buf_add_mem(buf, audio_buf, sizeof(audio_buf));
+#endif
+
+		int ret = bt_bap_stream_send(stream, buf, get_and_incr_seq_num(stream));
+		if (ret < 0) {
+			printk("ISO send failed: %d\n", ret);
+			net_buf_unref(buf);
 		}
 	}
 
-#if defined(CONFIG_LIBLC3)
-	k_work_schedule(&audio_send_work, K_USEC(MAX_FRAME_DURATION_US));
-#else
-	k_work_schedule(&audio_send_work, K_USEC(AUDIO_DATA_TIMEOUT_US));
-#endif
+	k_work_schedule(&audio_send_work, K_USEC(SDU_INTERVAL_US));
 }
 
 static enum bt_audio_dir stream_dir(const struct bt_bap_stream *stream)
@@ -354,51 +350,41 @@ static int lc3_qos(struct bt_bap_stream *stream, const struct bt_audio_codec_qos
 static int lc3_enable(struct bt_bap_stream *stream, const uint8_t meta[], size_t meta_len,
 		      struct bt_bap_ascs_rsp *rsp)
 {
-	printk("Enable: stream %p meta_len %zu\n", stream, meta_len);
+	ARG_UNUSED(meta);
+	ARG_UNUSED(meta_len);
 
-#if defined(CONFIG_LIBLC3)
-	{
-		int frame_duration_us;
-		int freq;
-		int ret;
-
-		ret = bt_audio_codec_cfg_get_freq(stream->codec_cfg);
-		if (ret > 0) {
-			freq = bt_audio_codec_cfg_freq_to_freq_hz(ret);
-		} else {
-			printk("Error: Codec frequency not set, cannot start codec.");
-			*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_INVALID,
-					       BT_BAP_ASCS_REASON_CODEC_DATA);
-			return ret;
-		}
-
-		ret = bt_audio_codec_cfg_get_frame_dur(stream->codec_cfg);
-		if (ret > 0) {
-			frame_duration_us = bt_audio_codec_cfg_frame_dur_to_frame_dur_us(ret);
-		} else {
-			printk("Error: Frame duration not set, cannot start codec.");
-			*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_INVALID,
-					       BT_BAP_ASCS_REASON_CODEC_DATA);
-			return ret;
-		}
-
-		frames_per_sdu =
-			bt_audio_codec_cfg_get_frame_blocks_per_sdu(stream->codec_cfg, true);
-
-		lc3_decoder = lc3_setup_decoder(frame_duration_us,
-						freq,
-						0, /* No resampling */
-						&lc3_decoder_mem);
-
-		if (lc3_decoder == NULL) {
-			printk("ERROR: Failed to setup LC3 encoder - wrong parameters?\n");
-			*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_INVALID,
-					       BT_BAP_ASCS_REASON_CODEC_DATA);
-			return -1;
-		}
+	int freq = bt_audio_codec_cfg_get_freq(stream->codec_cfg);
+	if (freq < 0 || bt_audio_codec_cfg_freq_to_freq_hz(freq) != OMI_LE_AUDIO_SAMPLE_RATE_HZ) {
+		*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_INVALID,
+				       BT_BAP_ASCS_REASON_CODEC_DATA);
+		return -EINVAL;
 	}
-#endif
 
+	int frame_dur = bt_audio_codec_cfg_get_frame_dur(stream->codec_cfg);
+	if (frame_dur < 0 ||
+	    bt_audio_codec_cfg_frame_dur_to_frame_dur_us(frame_dur) != MAX_FRAME_DURATION_US) {
+		*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_INVALID,
+				       BT_BAP_ASCS_REASON_CODEC_DATA);
+		return -EINVAL;
+	}
+
+	int octets = bt_audio_codec_cfg_get_octets_per_frame(stream->codec_cfg);
+	if (octets <= 0 || octets > 120) {
+		*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_CONF_INVALID,
+				       BT_BAP_ASCS_REASON_CODEC_DATA);
+		return -EINVAL;
+	}
+	octets_per_frame = octets;
+
+	lc3_encoder = lc3_setup_encoder(MAX_FRAME_DURATION_US,
+					OMI_LE_AUDIO_SAMPLE_RATE_HZ,
+					0,
+					&lc3_encoder_mem);
+	if (lc3_encoder == NULL) {
+		return -EINVAL;
+	}
+
+	printk("LC3 source ready: 16 kHz, 10 ms, %d octets\n", octets_per_frame);
 	return 0;
 }
 
@@ -726,6 +712,12 @@ int main(void)
 	}
 
 	printk("Bluetooth initialized\n");
+
+	err = omi_pdm_mic_start();
+	if (err != 0) {
+		printk("Omi PDM microphone init failed (err %d)\n", err);
+		return 0;
+	}
 
 	bt_bap_unicast_server_register(&param);
 	bt_bap_unicast_server_register_cb(&unicast_server_cb);
