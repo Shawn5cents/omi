@@ -379,6 +379,53 @@ class _DeviceSettingsState extends State<DeviceSettings> {
     );
   }
 
+  String _getWearableAssistantLabel() {
+    return SharedPreferencesUtil().wearableAssistantTarget == 1 ? 'ChatGPT' : 'Omi';
+  }
+
+  void _showWearableAssistantSheet() {
+    final currentTarget = SharedPreferencesUtil().wearableAssistantTarget;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              const Text(
+                'Wearable assistant',
+                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                title: const Text('Omi', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Use Omi normally', style: TextStyle(color: Colors.white54)),
+                trailing: currentTarget == 0 ? const Icon(Icons.check, color: Colors.white) : null,
+                onTap: () {
+                  setState(() => SharedPreferencesUtil().wearableAssistantTarget = 0);
+                  Navigator.pop(sheetContext);
+                },
+              ),
+              ListTile(
+                title: const Text('ChatGPT', style: TextStyle(color: Colors.white)),
+                subtitle: const Text('Omi button voice goes to ChatGPT', style: TextStyle(color: Colors.white54)),
+                trailing: currentTarget == 1 ? const Icon(Icons.check, color: Colors.white) : null,
+                onTap: () {
+                  setState(() => SharedPreferencesUtil().wearableAssistantTarget = 1);
+                  Navigator.pop(sheetContext);
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String _getDoubleTapActionLabel(int action) {
     switch (action) {
       case 0:
@@ -760,6 +807,13 @@ class _DeviceSettingsState extends State<DeviceSettings> {
             const Divider(height: 1, color: Color(0xFF3C3C43)),
           ],
           if (device?.type == DeviceType.omi) ...[
+            _buildProfileStyleItem(
+              icon: FontAwesomeIcons.robot,
+              title: 'Wearable assistant',
+              chipValue: _getWearableAssistantLabel(),
+              onTap: _showWearableAssistantSheet,
+            ),
+            const Divider(height: 1, color: Color(0xFF3C3C43)),
             _buildProfileStyleItem(
               icon: FontAwesomeIcons.handPointer,
               title: context.l10n.omiButtonActions,
