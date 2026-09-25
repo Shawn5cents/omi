@@ -35,6 +35,7 @@ import 'package:omi/services/capture/recording_lifecycle_telemetry.dart';
 import 'package:omi/services/capture/capture_seams.dart';
 import 'package:omi/services/capture/capture_session_owner.dart';
 import 'package:omi/services/capture/optimistic_processing.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/services/services.dart';
 import 'package:omi/services/voice_playback/omi_voice_playback_service.dart';
 import 'package:omi/services/sockets/transcription_service.dart';
@@ -2507,6 +2508,7 @@ class CaptureController extends ChangeNotifier
   }
 
   Future refreshInProgressConversations() async {
+    if (OmiPlusMode.standalone) return;
     _loadInProgressConversation();
   }
 
@@ -2518,6 +2520,7 @@ class CaptureController extends ChangeNotifier
       recordingState == RecordingState.deviceRecord;
 
   void _startInProgressConversationRefresh() {
+    if (OmiPlusMode.standalone) return;
     if (!_canRefreshInProgressConversation || segments.isNotEmpty || photos.isNotEmpty) return;
     // The socket calls this on every connect. If a cycle is already running, leave it
     // alone: restarting it resets the attempt counter, so a connection that reconnects
@@ -2619,6 +2622,7 @@ class CaptureController extends ChangeNotifier
   }
 
   Future _loadInProgressConversation() async {
+    if (OmiPlusMode.standalone) return;
     if (_inProgressConversationLoader != null) {
       await _inProgressConversationLoader!();
       return;
@@ -2853,12 +2857,15 @@ class CaptureController extends ChangeNotifier
       Logger.debug("Conversation was marked for starring, applying star");
       _starOngoingConversation = false; // Reset the flag
       conversation.starred = true;
-      // Call API to star the conversation
-      await setConversationStarred(conversation.id, true);
+      if (!OmiPlusMode.standalone) {
+        await setConversationStarred(conversation.id, true);
+      }
     }
 
     externalActions.upsertConversation(conversation);
-    PlatformManager.instance.analytics.conversationCreated(conversation, recordingDevice: _sessionRecordingDevice);
+    if (!OmiPlusMode.standalone) {
+      PlatformManager.instance.analytics.conversationCreated(conversation, recordingDevice: _sessionRecordingDevice);
+    }
   }
 
   Future<void> _handleLastConvoEvent(String memoryId) async {

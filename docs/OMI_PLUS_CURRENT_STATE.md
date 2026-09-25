@@ -1,6 +1,6 @@
 # Omi+ Current State
 
-Date: 2026-09-24
+Date: 2026-09-25
 
 ## Canonical workspace
 - Worktree: /data/repos/omi-plus
@@ -21,14 +21,20 @@ Date: 2026-09-24
 - Voice output in standalone mode bypasses Omi cloud TTS and uses the phone/local fallback path.
 - Google Drive is the user-owned cloud boundary through Grizzy. The Drive tree is Omi+/Conversations, Audio, Memories, Tasks, Attachments, Backups and Exports.
 - Assistant exchanges and attachments use the bounded Drive bridge. Tasks persist locally and mirror to Omi+/Tasks; standalone task mutations never call the Omi API.
-- Public Drive writes use the already-exposed authenticated /omi/assistant endpoint in storage mode; Google credentials remain only on the NucBox.
+- Public Drive writes use the bounded Grizzy storage path; Google credentials remain only on the NucBox.
+- Supabase Collective now provides the durable request ledger and pgmq retry queue. Requests survive phone/network/NucBox interruptions instead of depending on a live tunnel.
+- The phone and worker use the Supabase `omi-ingress` Edge Function as the public gateway; direct anonymous/signed-in execution of the underlying SECURITY DEFINER RPCs has been revoked.
+- Supabase Edge is already Cloudflare-fronted, so the durable path does not depend on the `omi.nicholsai.com` tunnel. A dedicated Cloudflare Worker is not required for reliability at this stage.
+- `omi-health` reports worker heartbeat, queue depth, processing age and failures without depending on the NucBox HTTP endpoint. Live health is green with worker online, zero queued/processing jobs and zero failures.
+- Grizzy's durable worker is a persistent systemd user service with restart-on-failure, bounded local model-call timeout and periodic heartbeat.
+- The app maintains a local idempotent outbox and checks unfinished jobs on startup and every 30 seconds; completed assistant answers are restored into chat after reconnect/restart.
 - Phone-call provider no longer performs Omi verified-number cloud preload in standalone mode.
-- Stock regression gate: 13/13 targeted tests PASS.
-- Standalone replacement gate: 8/8 targeted tests PASS.
-- Grizzy branch feature/omi-plus-assistant is at 0f750a9 with 78/78 tests PASS and npm run check PASS.
-- Public subscription assistant routing and public Google Drive task writes both return HTTP 200.
-- Android standalone dev APK compile: PASS.
-- Pixel proof completed before the USB cable fault: stock Omi and Omi+ dev coexist, and Omi+ retained files/models/ggml-tiny.bin (74 MB).
+- Standalone transport has defense-in-depth HTTP and WebSocket blocks against Omi cloud endpoints.
+- Command Whisper remains warm between button requests and prefers the configured/device language instead of language auto-detection when possible.
+- Standalone local-STT gate: 4/4 PASS. Stock/command STT regression gate: 14/14 PASS. Durable Edge client gate: 2/2 PASS. Grizzy worker reliability gate: 2/2 PASS; `npm run check` PASS.
+- Supabase security advisor no longer reports Omi-specific public SECURITY DEFINER warnings after gateway lockdown.
+- Android static analysis of the hardened slice: 0 issues. Standalone dev APK compile: PASS.
+- Latest Pixel install: PASS; pendant auto-reconnects; local Whisper starts; launch trace has no Firebase, Omi WebSocket or composite Omi fallback.
 
 ## Existing related work preserved
 - /data/repos/omi-chatgpt: non-destructive Omi -> ChatGPT MCP bridge.
@@ -36,7 +42,7 @@ Date: 2026-09-24
 - /data/repos/omi-le-audio: experimental LE Audio firmware; remains separate and non-default.
 
 ## Next vertical slice
-Replace Omi conversation processing and memories with local-first stores plus subscription-generated structure, mirrored to Google Drive. Reuse the existing Omi Conversations/Memories UI instead of creating parallel screens. After the Pixel USB link is stable again, reinstall the current standalone APK and physically validate pendant -> local Whisper -> Grizzy -> local TTS.
+Complete the remaining local-first conversation/memory projection and physically benchmark pendant button -> warm local Whisper -> durable Supabase queue -> subscription model -> local TTS. The current tiny Whisper path is functional but measured slower than real time on one sample, so benchmark Base/other on-device candidates only after the reliable end-to-end command path is locked.
 
 ## Release gate
 Do not merge the standalone work into a distributable release until:

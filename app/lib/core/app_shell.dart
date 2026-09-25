@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'package:app_links/app_links.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:omi/backend/http/api/action_items.dart' as action_items_api;
 import 'package:omi/backend/preferences.dart';
+import 'package:omi/backend/schema/message.dart';
 import 'package:omi/mobile/mobile_app.dart';
 import 'package:omi/pages/action_items/widgets/accept_shared_tasks_sheet.dart';
 import 'package:omi/pages/apps/app_detail/app_detail.dart';
@@ -29,6 +31,7 @@ import 'package:omi/services/integrations/clickup_service.dart';
 import 'package:omi/services/integrations/google_tasks_service.dart';
 import 'package:omi/services/notifications.dart';
 import 'package:omi/services/omi_plus/omi_plus_mode.dart';
+import 'package:omi/services/omi_plus/omi_plus_reliable_rpc.dart';
 import 'package:omi/services/integrations/todoist_service.dart';
 import 'package:omi/utils/alerts/app_snackbar.dart';
 import 'package:omi/utils/other/temp.dart';
@@ -46,6 +49,8 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  Timer? _omiRecoveryTimer;
+  bool _omiRecoveryInFlight = false;
   Future<void> initDeepLinks() async {
     _appLinks = AppLinks();
 
@@ -346,12 +351,58 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initializeProviders();
+      if (OmiPlusMode.standalone && mounted) {
+        _startOmiRecovery();
+      }
       // Start deep link handling AFTER providers are ready,
       // so getInitialLink() doesn't race against cache loading (#4763)
       if (mounted) {
         initDeepLinks();
       }
     });
+  }
+
+  void _startOmiRecovery() {
+    _omiRecoveryTimer?.cancel();
+    unawaited(_recoverOmiOutbox());
+    _omiRecoveryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_recoverOmiOutbox());
+    });
+  }
+
+  Future<void> _recoverOmiOutbox() async {
+    if (_omiRecoveryInFlight || !mounted) return;
+    _omiRecoveryInFlight = true;
+    final reliable = OmiPlusReliableRpc();
+    try {
+      final recovered = await reliable.recoverPending();
+      if (!mounted || recovered.isEmpty) return;
+      final messages = context.read<MessageProvider>();
+      for (final item in recovered) {
+        if (item.item.mode != 'assistant') continue;
+        final text = item.result['text']?.toString().trim() ?? '';
+        if (text.isEmpty) continue;
+        messages.addMessage(
+          ServerMessage(
+            const Uuid().v4(),
+            DateTime.now(),
+            text,
+            MessageSender.ai,
+            MessageType.text,
+            null,
+            false,
+            const [],
+            const [],
+            const [],
+          ),
+        );
+      }
+    } catch (e) {
+      Logger.debug('Omi+ outbox recovery deferred: $e');
+    } finally {
+      reliable.dispose();
+      _omiRecoveryInFlight = false;
+    }
   }
 
   Future<void> _initializeProviders() async {
@@ -402,6 +453,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     _linkSubscription?.cancel();
+    _omiRecoveryTimer?.cancel();
     super.dispose();
   }
 

@@ -9,6 +9,7 @@ import 'package:omi/backend/preferences.dart';
 import 'package:omi/backend/schema/app.dart';
 import 'package:omi/app_globals.dart';
 import 'package:omi/providers/base_provider.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/alerts/app_dialog.dart';
 import 'package:omi/utils/alerts/app_snackbar.dart';
 import 'package:omi/utils/l10n_extensions.dart';
@@ -280,6 +281,14 @@ class AppProvider extends BaseProvider {
   bool _isDrainingSearchQueue = false;
 
   Future<void> performServerSearch() async {
+    if (OmiPlusMode.standalone) {
+      filterApps();
+      searchResults = List<App>.of(filteredApps);
+      isSearching = false;
+      notifyListeners();
+      return;
+    }
+
     // Every call is a fresh statement of what the user wants, whether the text or
     // the filters moved.
     final revision = ++_latestSearchRevision;
@@ -529,6 +538,12 @@ class AppProvider extends BaseProvider {
     _beginCatalogLoad();
 
     try {
+      if (OmiPlusMode.standalone) {
+        setAppsFromCache();
+        groupedApps = [];
+        filterApps();
+        return;
+      }
       // Performance optimization: Load from cache first for immediate UI
       if (apps.isEmpty) {
         setAppsFromCache();
@@ -595,6 +610,10 @@ class AppProvider extends BaseProvider {
   Future<void> _loadPopularApps() async {
     _beginCatalogLoad();
     try {
+      if (OmiPlusMode.standalone) {
+        popularApps = [];
+        return;
+      }
       popularApps = await (retrievePopularAppsOverride?.call() ?? retrievePopularApps());
     } catch (e) {
       Logger.debug('Error loading popular apps: $e');
@@ -736,6 +755,13 @@ class AppProvider extends BaseProvider {
   }
 
   Future<void> refreshAppsAfterChange() async {
+    if (OmiPlusMode.standalone) {
+      setAppsFromCache();
+      groupedApps = [];
+      filterApps();
+      notifyListeners();
+      return;
+    }
     try {
       Logger.debug('Refreshing apps after installation/change…');
       // Fetch grouped apps and user's enabled app IDs in parallel

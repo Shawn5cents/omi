@@ -13,6 +13,8 @@ import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/backend/schema/structured.dart';
 import 'package:omi/services/auth_service.dart';
 import 'package:omi/services/notifications/merge_notification_handler.dart';
+import 'package:omi/services/omi_plus/omi_plus_conversation_store.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/conversations/capture_groups.dart';
 import 'package:omi/utils/logger.dart';
 
@@ -664,6 +666,10 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   Future _fetchNewConversations() async {
+    if (OmiPlusMode.standalone) {
+      await fetchConversations();
+      return;
+    }
     if (!_isSignedIn()) return;
     final generation = _sessionGeneration;
     final fetchRevision = ++_conversationFetchRevision;
@@ -762,6 +768,14 @@ class ConversationProvider extends ChangeNotifier {
   }
 
   Future<bool> fetchConversations() async {
+    if (OmiPlusMode.standalone) {
+      conversations = _filterPendingDeletes(await OmiPlusConversationStore.instance.load());
+      searchedConversations = List.of(conversations);
+      conversationsLoadFailed = false;
+      _groupConversationsByDateWithoutNotify();
+      notifyListeners();
+      return true;
+    }
     if (!_isSignedIn()) {
       _cancelInitialFetchRetry();
       conversationsLoadFailed = false;
@@ -1377,7 +1391,9 @@ class ConversationProvider extends ChangeNotifier {
   Future<void> addConversation(ServerConversation conversation) async {
     conversations.insert(0, conversation);
     _groupConversationsByDateWithoutNotify();
-
+    if (OmiPlusMode.standalone) {
+      await OmiPlusConversationStore.instance.upsert(conversation);
+    }
     notifyListeners();
   }
 

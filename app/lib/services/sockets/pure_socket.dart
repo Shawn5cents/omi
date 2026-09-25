@@ -6,6 +6,7 @@ import 'package:web_socket_channel/status.dart' as socket_channel_status;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:omi/backend/http/shared.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/debug_log_manager.dart';
 import 'package:omi/utils/logger.dart';
 import 'package:omi/utils/platform/platform_manager.dart';
@@ -74,6 +75,11 @@ class PureSocket implements IPureSocket {
 
   @override
   Future<bool> connect() async {
+    if (OmiPlusMode.standalone && isOmiApiUrl(url)) {
+      Logger.debug('[Omi+] Blocked Omi cloud WebSocket in standalone mode: $url');
+      _status = PureSocketStatus.notConnected;
+      return false;
+    }
     if (_status == PureSocketStatus.connecting || _status == PureSocketStatus.connected) {
       return false;
     }

@@ -15,6 +15,7 @@ import 'package:omi/utils/jwt_expiry.dart';
 import 'package:omi/services/account_cutover/account_cutover_runtime.dart';
 import 'package:omi/services/auth/auth_token_result.dart';
 import 'package:omi/services/auth_service.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/logger.dart';
 import 'package:omi/utils/platform/platform_manager.dart';
 
@@ -167,6 +168,8 @@ String normalizeOmiApiUrlForHostMatch(String url) {
       .replaceFirst(RegExp(r'^ws://', caseSensitive: false), '');
 }
 
+bool isOmiApiUrl(String url) => _isRequiredAuthCheck(url);
+
 bool _isRequiredAuthCheck(String url) {
   // Agent VM endpoints always hit prod even when app uses dev
   if (url.contains('api.omi.me')) return true;
@@ -205,6 +208,13 @@ Future<http.StreamedResponse> makeRawApiCall({
   Map<String, String> headers = const {},
 }) async {
   final requireAuthCheck = _isRequiredAuthCheck(url);
+  if (OmiPlusMode.standalone && requireAuthCheck) {
+    return http.StreamedResponse(
+      Stream<List<int>>.value(utf8.encode('{"detail":"Omi cloud disabled in Omi+ standalone"}')),
+      410,
+      reasonPhrase: 'Omi cloud disabled',
+    );
+  }
   try {
     var builtHeaders = await buildHeaders(
       requireAuthCheck: requireAuthCheck,
@@ -362,6 +372,15 @@ Future<http.Response> sendUncaughtApiCall({
   ApiExecutionSeams? execution,
   void Function(AuthTokenResult refresh)? onAuthRefresh,
 }) async {
+  if (execution == null && OmiPlusMode.standalone && _isRequiredAuthCheck(url)) {
+    return http.Response(
+      '{"detail":"Omi cloud disabled in Omi+ standalone"}',
+      410,
+      reasonPhrase: 'Omi cloud disabled',
+      headers: const {'content-type': 'application/json'},
+    );
+  }
+
   if (execution != null) {
     var builtHeaders = await execution.headers(ApiRequest(url: url, method: method, headers: headers, body: body));
     var response = await execution.transport(ApiRequest(url: url, method: method, headers: builtHeaders, body: body));

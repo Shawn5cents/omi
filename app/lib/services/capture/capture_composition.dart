@@ -9,6 +9,8 @@ import 'package:omi/services/capture/capture_session_owner.dart';
 import 'package:omi/services/capture/conversation_location_capture.dart';
 import 'package:omi/services/capture/local_segment_store.dart';
 import 'package:omi/services/capture/recording_lifecycle_telemetry.dart';
+import 'package:omi/services/omi_plus/omi_plus_conversation_processor.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/services/services.dart';
 import 'package:omi/services/devices/connectors/device_connection.dart';
 import 'package:omi/services/wals/recording_transfer_coordinator.dart';
@@ -112,6 +114,8 @@ CaptureProvider composeProductionCaptureProvider({
   if (Platform.environment.containsKey('FLUTTER_TEST') || const bool.fromEnvironment('FLUTTER_TEST')) {
     throw UnsupportedError('composeProductionCaptureProvider refuses FLUTTER_TEST');
   }
+  final segments = localSegmentStore ?? LocalSegmentStore.appSupport();
+  final conversationProcessor = OmiPlusMode.standalone ? OmiPlusConversationProcessor(localSegments: segments) : null;
   return CaptureProvider(
     sessionOwner: CaptureSessionOwner(
       coordinator: RecordingTransferCoordinator.instance,
@@ -124,7 +128,8 @@ CaptureProvider composeProductionCaptureProvider({
       },
       stopForeground: ForegroundUtil.stopForegroundTask,
     ),
-    localSegmentStore: localSegmentStore ?? LocalSegmentStore.appSupport(),
+    localSegmentStore: segments,
+    processInProgressConversation: conversationProcessor?.processLatest,
     externalActions: externalActions,
   );
 }

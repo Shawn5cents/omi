@@ -12,6 +12,14 @@ import 'package:path_provider/path_provider.dart';
 /// not add a native dependency. The bytes on disk are the v5 hash payload
 /// (speaker, speaker_id, is_user, person_id, text) plus timings/ids S22
 /// will need. [release] deletes a session after the projection is accepted.
+class LocalSegmentSession {
+  const LocalSegmentSession({required this.sessionId, required this.startedAt, required this.segments});
+
+  final String sessionId;
+  final DateTime startedAt;
+  final List<TranscriptSegment> segments;
+}
+
 class LocalSegmentStore {
   LocalSegmentStore._({required this.enabled, Directory? directory}) : _directory = directory;
 
@@ -70,6 +78,27 @@ class LocalSegmentStore {
     final raw = decoded['segments'];
     if (raw is! List) return const [];
     return raw.whereType<Map<String, dynamic>>().map(_segmentFromJson).toList();
+  }
+
+  Future<LocalSegmentSession?> loadLatestSession() async {
+    if (!enabled) return null;
+    final dir = await resolveDirectory();
+    if (!await dir.exists()) return null;
+    final files = await dir.list().where((entry) => entry is File && entry.path.endsWith('.json')).cast<File>().toList();
+    if (files.isEmpty) return null;
+    files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    final file = files.first;
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! Map<String, dynamic>) return null;
+    final sessionId = decoded['session_id']?.toString();
+    final raw = decoded['segments'];
+    if (sessionId == null || raw is! List) return null;
+    final segments = raw.whereType<Map>().map((row) => _segmentFromJson(Map<String, dynamic>.from(row))).toList();
+    return LocalSegmentSession(
+      sessionId: sessionId,
+      startedAt: await file.lastModified(),
+      segments: segments,
+    );
   }
 
   Future<String?> loadDigest(String sessionId) async {

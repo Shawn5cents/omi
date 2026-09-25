@@ -16,6 +16,7 @@ import 'package:omi/services/sockets/listen_client_state.dart';
 import 'package:omi/services/sockets/on_device_apple_provider.dart';
 import 'package:omi/services/sockets/on_device_whisper_provider.dart';
 import 'package:omi/services/sockets/pure_socket.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/services/sockets/transcription_service.dart';
 import 'package:omi/utils/debug_log_manager.dart';
 import 'package:omi/utils/hard_secret_detector.dart';
@@ -431,6 +432,19 @@ class TranscriptSocketServiceFactory {
     bool speechProfileRedo = false,
   }) {
     final primarySocket = _createPollingSocket(sampleRate, codec, config);
+    if (OmiPlusMode.standalone) {
+      return TranscriptSegmentSocketService.withSocket(
+        sampleRate,
+        codec,
+        language,
+        primarySocket,
+        source: source,
+        customSttMode: true,
+        sttConfigId: config.sttConfigId,
+        onboardingMode: true,
+        speechProfileRedo: speechProfileRedo,
+      );
+    }
     final secondaryService = SpeechProfileTranscriptSegmentSocketService.create(
       sampleRate,
       codec,
@@ -493,7 +507,21 @@ class TranscriptSocketServiceFactory {
         ? _createStreamingSocket(sampleRate, codec, config)
         : _createPollingSocket(sampleRate, codec, config);
 
-    // Wrap with composite service (primary STT + Omi backend)
+    if (OmiPlusMode.standalone) {
+      return TranscriptSegmentSocketService.withSocket(
+        sampleRate,
+        codec,
+        effectiveLang,
+        primarySocket,
+        source: source,
+        customSttMode: true,
+        sttConfigId: sttConfigId,
+        geolocation: geolocation,
+        clientConversationId: clientConversationId,
+      );
+    }
+
+    // Stock Omi keeps its composite service (primary STT + Omi backend).
     return _createCompositeService(
       sampleRate,
       codec,
