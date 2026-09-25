@@ -17,6 +17,7 @@ import 'package:omi/backend/schema/transcript_segment.dart';
 import 'package:omi/models/audio_route.dart';
 import 'package:omi/services/auth/auth_token_result.dart';
 import 'package:omi/services/phone_call_service.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/logger.dart';
 
 enum TranscriptionStatus { idle, connecting, active, reconnecting, failed, noAudio }
@@ -142,7 +143,12 @@ class PhoneCallProvider extends ChangeNotifier {
   PhoneCallProvider() {
     _wireNativeCallbacks();
     _nativeService.startListening();
-    _initialLoad = loadVerifiedNumbers();
+    if (OmiPlusMode.standalone) {
+      _numbersLoaded = true;
+      _initialLoad = Future<void>.value();
+    } else {
+      _initialLoad = loadVerifiedNumbers();
+    }
   }
 
   /// Same wiring as the default constructor without the constructor-time

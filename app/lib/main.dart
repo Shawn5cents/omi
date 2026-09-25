@@ -75,6 +75,7 @@ import 'package:omi/providers/user_provider.dart';
 import 'package:omi/providers/voice_recorder_provider.dart';
 import 'package:omi/providers/phone_call_provider.dart';
 import 'package:omi/services/auth_service.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/ui/omi_theme.dart';
 import 'package:omi/services/notifications.dart';
 import 'package:omi/services/notifications/action_item_notification_handler.dart';
@@ -192,21 +193,25 @@ Future _init() async {
   }
   LimitlessDeviceConnection.realtimeSuppressionPolicy = () => SharedPreferencesUtil().batchModeEnabled;
 
-  // Firebase
-  await PhysicalQualification.startupStage('firebase_init', _ensureFirebaseApp);
+  // Standalone Omi+ has no Omi/Firebase identity or notification backend.
+  if (!OmiPlusMode.standalone) {
+    await PhysicalQualification.startupStage('firebase_init', _ensureFirebaseApp);
 
-  if (Env.profile.usesFirebaseAuthEmulator) {
-    await PhysicalQualification.startupStage('auth_emulator',
-        () => FirebaseAuth.instance.useAuthEmulator(Env.firebaseAuthEmulatorHost, Env.firebaseAuthEmulatorPort));
+    if (Env.profile.usesFirebaseAuthEmulator) {
+      await PhysicalQualification.startupStage('auth_emulator',
+          () => FirebaseAuth.instance.useAuthEmulator(Env.firebaseAuthEmulatorHost, Env.firebaseAuthEmulatorPort));
+    }
   }
 
   await PhysicalQualification.startupStage('platform_services', PlatformManager.initializeServices);
   await PhysicalQualification.startupStage('notification_locale', NotificationChannelStrings.loadAppLocale);
-  await PhysicalQualification.startupStage('notification_service', NotificationService.instance.initialize);
+  if (!OmiPlusMode.standalone) {
+    await PhysicalQualification.startupStage('notification_service', NotificationService.instance.initialize);
 
-  // Register FCM background message handler
-  if (PlatformManager().isFCMSupported) {
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    // Register FCM background message handler only for stock/cloud builds.
+    if (PlatformManager().isFCMSupported) {
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    }
   }
 
   await PhysicalQualification.startupStage('shared_preferences', SharedPreferencesUtil.init);
@@ -217,7 +222,10 @@ Future _init() async {
     Env.isTestFlight = await EnvironmentDetector.isTestFlight();
   }
 
-  if (PhysicalQualification.enabled) {
+  if (OmiPlusMode.standalone) {
+    SharedPreferencesUtil().uid = 'omi-plus-local';
+    SharedPreferencesUtil().onboardingCompleted = true;
+  } else if (PhysicalQualification.enabled) {
     final restored = FirebaseAuth.instance.currentUser;
     if (restored != null && restored.uid != PhysicalQualification.fixtureUid) {
       throw StateError('Physical qualification refuses a different persisted principal.');
@@ -229,9 +237,11 @@ Future _init() async {
     SharedPreferencesUtil().onboardingCompleted = true;
   }
 
-  bool isAuth = await PhysicalQualification.startupStage(
-      'resolve_auth', () => resolveStartupAuth(() => AuthService.instance.getIdToken()));
-  if (isAuth) {
+  final bool isAuth = OmiPlusMode.standalone
+      ? true
+      : await PhysicalQualification.startupStage(
+          'resolve_auth', () => resolveStartupAuth(() => AuthService.instance.getIdToken()));
+  if (isAuth && !OmiPlusMode.standalone) {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     PlatformManager.instance.analytics.identify(
       authMethod:
@@ -260,24 +270,28 @@ Future _init() async {
     Logger.debug('main: restored ${peripheralUuids.length} BLE peripherals');
   };
 
-  await PhysicalQualification.startupStage('crash_reporter', CrashlyticsManager.init);
-  if (isAuth) {
-    PlatformManager.instance.crashReporter.identifyUser(
-      FirebaseAuth.instance.currentUser?.email ?? '',
-      SharedPreferencesUtil().fullName,
-      SharedPreferencesUtil().uid,
-    );
-  }
-  if (!PhysicalQualification.enabled) {
-    AnalyticsManager().bindIdentity(FirebaseAuth.instance.currentUser?.uid);
+  if (!OmiPlusMode.standalone) {
+    await PhysicalQualification.startupStage('crash_reporter', CrashlyticsManager.init);
+    if (isAuth) {
+      PlatformManager.instance.crashReporter.identifyUser(
+        FirebaseAuth.instance.currentUser?.email ?? '',
+        SharedPreferencesUtil().fullName,
+        SharedPreferencesUtil().uid,
+      );
+    }
+    if (!PhysicalQualification.enabled) {
+      AnalyticsManager().bindIdentity(FirebaseAuth.instance.currentUser?.uid);
+    }
   }
   FlutterError.onError = (FlutterErrorDetails details) {
     if (PhysicalQualification.enabled) {
       unawaited(PhysicalQualification.runtimeEvent('flutter_error', error: details.exception, stack: details.stack));
       return;
     }
-    AnalyticsManager().recordProductError(ProductErrorKind.flutterFramework);
-    unawaited(FirebaseCrashlytics.instance.recordFlutterError(details).catchError((Object _) {}));
+    if (!OmiPlusMode.standalone) {
+      AnalyticsManager().recordProductError(ProductErrorKind.flutterFramework);
+      unawaited(FirebaseCrashlytics.instance.recordFlutterError(details).catchError((Object _) {}));
+    }
     Logger.instance.talker.handle(details.exception, details.stack);
     DebugLogManager.logError(details.exception, details.stack, 'FlutterError');
   };
@@ -285,9 +299,12 @@ Future _init() async {
   PlatformDispatcher.instance.onError = (error, stack) {
     if (PhysicalQualification.enabled) {
       unawaited(PhysicalQualification.runtimeEvent('platform_error', error: error, stack: stack));
-    } else {
+    } else if (!OmiPlusMode.standalone) {
       AnalyticsManager().recordProductError(ProductErrorKind.uncaughtDart);
       unawaited(FirebaseCrashlytics.instance.recordError(error, stack, fatal: true).catchError((Object _) {}));
+    } else {
+      Logger.instance.talker.handle(error, stack);
+      DebugLogManager.logError(error, stack, 'PlatformError');
     }
     return true;
   };
@@ -313,7 +330,7 @@ Future<void> _start() async {
     if (!PhysicalQualification.enabled && Firebase.apps.isNotEmpty) {
       unawaited(FirebaseCrashlytics.instance.recordError(error, stack, fatal: true).catchError((Object _) {}));
     }
-    if (!PhysicalQualification.enabled) {
+    if (!PhysicalQualification.enabled && !OmiPlusMode.standalone) {
       AnalyticsManager().recordProductError(ProductErrorKind.startup);
     }
     runApp(StartupFailureApp(error: error, stack: stack, onRetry: _start));
@@ -350,9 +367,11 @@ void main() {
         unawaited(PhysicalQualification.runtimeEvent('zone_error', error: error, stack: stack));
       } else {
         debugPrint('Uncaught error: $error\n$stack');
-        AnalyticsManager().recordProductError(ProductErrorKind.uncaughtDart);
+        if (!OmiPlusMode.standalone) {
+          AnalyticsManager().recordProductError(ProductErrorKind.uncaughtDart);
+        }
       }
-      if (!PhysicalQualification.enabled && Firebase.apps.isNotEmpty) {
+      if (!PhysicalQualification.enabled && !OmiPlusMode.standalone && Firebase.apps.isNotEmpty) {
         unawaited(FirebaseCrashlytics.instance.recordError(error, stack, fatal: true).catchError((Object _) {}));
       }
     },
@@ -381,10 +400,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void initState() {
-    NotificationUtil.initializeNotificationsEventListeners();
-    NotificationUtil.initializeIsolateReceivePort();
+    if (!OmiPlusMode.standalone) {
+      NotificationUtil.initializeNotificationsEventListeners();
+      NotificationUtil.initializeIsolateReceivePort();
+    }
     WidgetsBinding.instance.addObserver(this);
-    if (!PhysicalQualification.enabled) {
+    if (!PhysicalQualification.enabled && !OmiPlusMode.standalone) {
       _appSessionTelemetry.recordColdStart();
       _performanceTelemetry.attach();
       PlatformManager.instance.analytics.recordTelemetryHealth();
@@ -399,7 +420,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (!PhysicalQualification.enabled) _performanceTelemetry.dispose();
+    if (!PhysicalQualification.enabled && !OmiPlusMode.standalone) _performanceTelemetry.dispose();
     super.dispose();
   }
 
@@ -410,6 +431,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   Future<void> _refreshAccountCutoverThenWakeUploads() async {
+    if (OmiPlusMode.standalone) return;
     if (!AuthService.instance.isSignedIn()) {
       await AccountCutoverRuntime.instance.bindAuthenticatedOwner(null);
       return;
@@ -428,7 +450,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.resumed) {
-      if (!PhysicalQualification.enabled) {
+      if (!PhysicalQualification.enabled && !OmiPlusMode.standalone) {
         _appSessionTelemetry.recordResumed();
         _performanceTelemetry.setForeground(true);
         PlatformManager.instance.analytics.recordTelemetryHealth();
@@ -436,11 +458,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
       unawaited(_refreshAccountCutoverThenWakeUploads());
     } else if (state == AppLifecycleState.paused) {
-      if (!PhysicalQualification.enabled) {
+      if (!PhysicalQualification.enabled && !OmiPlusMode.standalone) {
         _appSessionTelemetry.recordBackgrounded();
         _performanceTelemetry.setForeground(false);
+        SyncReconciler.instance.onBackground();
       }
-      SyncReconciler.instance.onBackground();
       _onAppPaused();
     } else if (state == AppLifecycleState.detached) {
       _deinit();
@@ -536,7 +558,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             debugShowCheckedModeBanner: F.env == Environment.dev,
             title: F.title,
             navigatorKey: MyApp.navigatorKey,
-            navigatorObservers: [if (!PhysicalQualification.enabled) _performanceTelemetry],
+            navigatorObservers: [if (!PhysicalQualification.enabled && !OmiPlusMode.standalone) _performanceTelemetry],
             locale: context.watch<LocaleProvider>().locale,
             localizationsDelegates: const [
               AppLocalizations.delegate,

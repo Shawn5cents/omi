@@ -9,6 +9,7 @@ import 'package:omi/pages/onboarding/permissions/permissions_checker.dart';
 import 'package:omi/pages/onboarding/wrapper.dart';
 import 'package:omi/providers/auth_provider.dart';
 import 'package:omi/services/account_cutover/account_cutover_blocking_gate.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/alerts/app_snackbar.dart';
 import 'package:omi/ui/ui.dart';
 import 'package:omi/utils/l10n_extensions.dart';
@@ -34,6 +35,13 @@ class _MobileAppState extends State<MobileApp> {
 
   @override
   Widget build(BuildContext context) {
+    if (OmiPlusMode.standalone) {
+      if (!SharedPreferencesUtil().permissionsCompleted) {
+        return const _PermissionsGate();
+      }
+      return const HomePageWrapper();
+    }
+
     return Consumer<AuthenticationProvider>(
       builder: (context, authProvider, child) {
         if (authProvider.requiresReauthentication) {

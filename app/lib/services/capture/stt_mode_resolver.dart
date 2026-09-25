@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:omi/models/custom_stt_config.dart';
+import 'package:omi/models/stt_provider.dart';
 import 'package:omi/models/transcription_allowance.dart';
 import 'package:omi/services/capture/free_tier_on_device_stt_flag.dart';
 import 'package:omi/services/capture/transcription_allowance_cache.dart';
 import 'package:omi/services/freemium_transcription_service.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/services/sockets/transcription_service.dart';
 
@@ -88,6 +90,53 @@ class SttModeResolver {
   }
 
   Future<SttModeDecision> decide({required CustomSttConfig persistedCustomStt, required BleAudioCodec codec}) async {
+    if (OmiPlusMode.standalone) {
+      // Standalone Omi+ must never open Omi's managed transcription socket.
+      // Preserve an explicit on-device Whisper choice; ignore any persisted
+      // cloud/custom provider and synthesize the local Whisper config instead.
+      if (persistedCustomStt.provider == SttProvider.onDeviceWhisper) {
+        return SttModeDecision(
+          path: SttResolvedPath.honorCustom,
+          customSttConfig: persistedCustomStt.copyWith(sendRawAudioToOmi: false),
+          reason: 'omi_plus_standalone_explicit_local',
+          allowanceOnDevice: true,
+        );
+      }
+
+      final readiness = await readinessReader();
+      if (readiness != FreemiumReadiness.ready) {
+        return const SttModeDecision(
+          path: SttResolvedPath.blocked,
+          reason: 'omi_plus_standalone_local_not_ready',
+          allowanceOnDevice: true,
+        );
+      }
+      if (TranscriptSocketServiceFactory.shouldBlockUnsupportedCodecFallback(codec, null, allowanceOnDevice: true)) {
+        return const SttModeDecision(
+          path: SttResolvedPath.blocked,
+          reason: 'omi_plus_standalone_unsupported_codec',
+          allowanceOnDevice: true,
+        );
+      }
+      final synthesized = onDeviceConfigBuilder();
+      if (synthesized == null) {
+        return const SttModeDecision(
+          path: SttResolvedPath.blocked,
+          reason: 'omi_plus_standalone_local_config_unavailable',
+          allowanceOnDevice: true,
+        );
+      }
+      return SttModeDecision(
+        path: SttResolvedPath.onDevice,
+        customSttConfig: synthesized.copyWith(
+          identity: 'omi-plus:standalone:on-device',
+          sendRawAudioToOmi: false,
+        ),
+        reason: 'omi_plus_standalone_on_device',
+        allowanceOnDevice: true,
+      );
+    }
+
     FreemiumReadiness readiness = FreemiumReadiness.ready;
     final flag = flagReader();
     final allowance = allowanceReader();

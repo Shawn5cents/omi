@@ -18,6 +18,7 @@ import 'package:omi/models/custom_stt_config.dart';
 import 'package:omi/models/omi_plus_settings.dart';
 import 'package:omi/models/stt_provider.dart';
 import 'package:omi/services/capture/capture_policy.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/logger.dart';
 
 typedef CapturePolicyBridge = Future<Object?> Function(String method, Map<String, Object> arguments);
@@ -567,18 +568,21 @@ class SharedPreferencesUtil {
 
   set doubleTapAction(int value) => saveInt('doubleTapAction', value);
 
-  // Omi+ is additive and disabled by default. These settings only affect
-  // explicit wearable assistant requests; ambient capture remains stock Omi.
-  bool get omiPlusEnabled => getBool('omiPlusEnabled');
+  // Stock builds keep Omi+ opt-in. Private standalone builds make Omi+ the
+  // backend by construction: subscription AI + local STT, never Omi cloud.
+  bool get omiPlusEnabled => OmiPlusMode.standalone || getBool('omiPlusEnabled');
 
   set omiPlusEnabled(bool value) => saveBool('omiPlusEnabled', value);
 
-  OmiPlusAssistantTarget get omiPlusAssistantTarget =>
-      OmiPlusAssistantTarget.fromStorage(getString('omiPlusAssistantTarget'));
+  OmiPlusAssistantTarget get omiPlusAssistantTarget {
+    final stored = getString('omiPlusAssistantTarget');
+    if (OmiPlusMode.standalone && stored.isEmpty) return OmiPlusAssistantTarget.auto;
+    return OmiPlusAssistantTarget.fromStorage(stored);
+  }
 
   set omiPlusAssistantTarget(OmiPlusAssistantTarget value) => saveString('omiPlusAssistantTarget', value.name);
 
-  bool get omiPlusLocalSttEnabled => getBool('omiPlusLocalSttEnabled');
+  bool get omiPlusLocalSttEnabled => OmiPlusMode.standalone || getBool('omiPlusLocalSttEnabled');
 
   set omiPlusLocalSttEnabled(bool value) => saveBool('omiPlusLocalSttEnabled', value);
 

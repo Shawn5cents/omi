@@ -1,10 +1,10 @@
 # Omi+ Roadmap
 
 ## Product rule
-Omi+ preserves stock Omi behavior first. Every Omi+ capability is additive, optional, and independently disableable.
+Keep Omi's hardware, BLE, capture, firmware and local app UX. Stock Omi remains installable separately. The private Omi+ standalone build replaces Omi-hosted AI/cloud dependencies with local processing, Grizzy subscription lanes and user-owned Google Drive storage.
 
 ## Target
-Omi pendant + Omi app + local speech + Grizzy + subscription-backed ChatGPT/Claude/Gemini clients, while retaining Omi conversations, memories, summaries, tasks, apps, device controls, sync, firmware updates, APIs, and MCP.
+Omi pendant + Omi app UX + local speech + Grizzy + subscription-backed ChatGPT/Claude/Gemini + Google Drive, while preserving device controls, recording/capture behavior, firmware support and familiar Omi conversation/memory/task surfaces.
 
 ## Delivery order
 ### Phase 0 - Preserve and baseline
@@ -42,11 +42,13 @@ Omi pendant + Omi app + local speech + Grizzy + subscription-backed ChatGPT/Clau
 - No credential extraction or private API impersonation.
 - Add health, timeout, quota and fallback status.
 
-### Phase 5 - Omi memory + Collective context
-- Keep Omi conversation/memory store canonical for captured life context.
-- Query Grizzy/Collective for projects, repos, machines and tools.
-- Add explicit cross-memory query path with source labels.
-- Never silently copy all Omi history into Collective.
+### Phase 5 - Local second brain + Google Drive
+- Replace Omi conversation processing with local transcript persistence plus subscription-generated structure.
+- Reuse the existing Conversations UI against the local store.
+- Replace Omi memory CRUD with a local memory ledger and Google Drive mirror.
+- Keep tasks local-first and mirrored to Omi+/Tasks.
+- Store conversations, memories, audio, attachments, backups and exports under the fixed Omi+ Drive tree.
+- Query Grizzy/Collective for projects, repos, machines and tools only when explicitly requested.
 
 ### Phase 6 - Live translation
 - Omi audio -> local STT -> translation -> local TTS -> earbud.
@@ -65,18 +67,19 @@ Omi pendant + Omi app + local speech + Grizzy + subscription-backed ChatGPT/Clau
 - Firmware changes remain optional and separate.
 
 ## Definition of done for v0.1
-1. Stock Omi Android features still work.
-2. Omi+ provider setting defaults to Omi.
-3. Explicit wearable request can route to Grizzy and return text.
-4. Omi cloud capture path remains available.
-5. Omi+ can be disabled without reinstalling.
-6. Tests cover provider configuration and routing fallback.
-7. No OpenAI/Anthropic/Google API key is required for subscription lanes.
-8. Repository is clean and upstream lineage is documented.
+1. Stock Omi remains installable and its production package is untouched.
+2. Standalone Omi+ boots without Omi/Firebase account or subscription dependencies.
+3. Pendant and typed requests route to Grizzy subscription clients.
+4. Ambient and command transcription can run locally with no silent Omi-cloud fallback.
+5. Conversations, memories, tasks and attachments are local-first and mirrored to Google Drive.
+6. Omi cloud TTS is replaced by local/phone TTS in standalone mode.
+7. No OpenAI/Anthropic/Google model API key is required for subscription lanes.
+8. Pixel + pendant end-to-end validation passes.
+9. Repository is clean and upstream lineage is documented.
 
 ## Deferred until evidence justifies them
 - Replacing Omi firmware.
 - Native Android LE Audio microphone routing.
 - Always-on live translation.
-- Custom cloud infrastructure duplicating working Omi services.
-- Reimplementing Omi memories/tasks/apps.
+- Rewriting Omi's UI instead of reusing it.
+- Introducing a new paid cloud database when Google Drive + local state are sufficient.

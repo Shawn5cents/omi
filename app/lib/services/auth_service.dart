@@ -18,6 +18,7 @@ import 'package:omi/env/env.dart';
 import 'package:omi/env/environment_profile.dart';
 import 'package:omi/flavors.dart';
 import 'package:omi/services/auth/auth_token_result.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/logger.dart';
 import 'package:omi/utils/platform/platform_manager.dart';
 
@@ -174,6 +175,7 @@ class AuthService {
   /// FirebaseAuth; the local hermetic harness answers from its synthetic
   /// principal. No behavior change for real builds.
   bool isSignedIn() {
+    if (OmiPlusMode.standalone) return true;
     final user = _tokenGateway.currentUser;
     return user != null && !user.isAnonymous;
   }

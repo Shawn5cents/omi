@@ -11,6 +11,7 @@ import 'package:just_audio/just_audio.dart';
 
 import 'package:omi/backend/http/api/tts.dart';
 import 'package:omi/backend/preferences.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/logger.dart';
 
 // Chunk-size heuristics ported verbatim from the desktop Swift service.
@@ -269,6 +270,10 @@ class OmiVoicePlaybackService {
       }
       final pending = _synthesisQueue.removeAt(0);
       debugPrint('OmiVoicePlayback: synthesizing "${pending.text}"');
+      if (OmiPlusMode.standalone) {
+        await _speakFallback(pending.text);
+        continue;
+      }
       try {
         final bytes = await synthesizeSpeech(text: pending.text);
         debugPrint('OmiVoicePlayback: got ${bytes?.length ?? 0} MP3 bytes');

@@ -20,6 +20,8 @@ import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/models/omi_plus_settings.dart';
 import 'package:omi/services/omi_plus/omi_plus_command_transcription.dart';
+import 'package:omi/services/omi_plus/omi_plus_drive_service.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/services/voice_playback/omi_voice_playback_service.dart';
 import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
@@ -434,6 +436,41 @@ class MessageProvider extends ChangeNotifier {
   }
 
   Future<List<MessageFile>?> uploadFiles(List<File> files, String? appId) async {
+    if (files.isNotEmpty && OmiPlusMode.standalone) {
+      setMultiUploadingFileStatus(files.map((e) => e.path).toList(), true);
+      try {
+        final results = <MessageFile>[];
+        for (final file in files) {
+          final uploaded = await OmiPlusDriveService.instance.uploadFile(file);
+          results.add(
+            MessageFile(
+              '',
+              null,
+              uploaded.name,
+              OmiPlusDriveService.instance.mimeTypeForName(file.path),
+              uploaded.id,
+              DateTime.now().toUtc(),
+              null,
+            ),
+          );
+        }
+        for (var i = 0; i < results.length && i < files.length; i++) {
+          if (!selectedFiles.any((f) => identical(f, files[i]))) continue;
+          uploadedFiles.add(results[i]);
+          _uploadedBySelection[files[i]] = results[i];
+        }
+        return results;
+      } catch (e) {
+        Logger.debug('Omi+ Drive upload failed: $e');
+        final l10n = globalNavigatorKey.currentContext?.l10n;
+        AppSnackbar.showSnackbarError(l10n?.msgUploadFileFailed ?? 'Failed to upload file to Google Drive');
+        return null;
+      } finally {
+        setMultiUploadingFileStatus(files.map((e) => e.path).toList(), false);
+        notifyListeners();
+      }
+    }
+
     if (files.isNotEmpty) {
       setMultiUploadingFileStatus(files.map((e) => e.path).toList(), true);
       List<MessageFile>? res;
@@ -597,16 +634,20 @@ class MessageProvider extends ChangeNotifier {
     if (_voiceSendInFlight) return;
     if (audioBytes.isEmpty) return;
     _voiceSendInFlight = true;
-    final chatAttempt = ProductTelemetry.instance.start(
-      ProductJourney.chatVoice,
-      surface: ProductSurface.chat,
-    );
+    final chatAttempt = OmiPlusMode.standalone
+        ? null
+        : ProductTelemetry.instance.start(
+            ProductJourney.chatVoice,
+            surface: ProductSurface.chat,
+          );
     var chatAttemptCompleted = false;
     late String responseMessageId;
     void completeChat(ProductOutcome outcome, {ProductFailure failure = ProductFailure.none}) {
       if (chatAttemptCompleted) return;
       chatAttemptCompleted = true;
-      _finishChatTelemetryAttempt(responseMessageId, outcome, failure: failure);
+      if (chatAttempt != null) {
+        _finishChatTelemetryAttempt(responseMessageId, outcome, failure: failure);
+      }
     }
 
     _chatQuotaExceeded = false; // Clear stale quota state from previous sends
@@ -619,7 +660,7 @@ class MessageProvider extends ChangeNotifier {
       );
     } catch (_) {
       _voiceSendInFlight = false;
-      chatAttempt.complete(ProductOutcome.failure, failure: ProductFailure.unknown);
+      chatAttempt?.complete(ProductOutcome.failure, failure: ProductFailure.unknown);
       return;
     }
 
@@ -637,14 +678,16 @@ class MessageProvider extends ChangeNotifier {
     String chatTargetId = useOmiPlus ? 'omi_plus_${omiPlusTarget.name}' : (currentAppId ?? 'omi');
     bool isPersonaChat = false;
 
-    PlatformManager.instance.analytics.chatVoiceInputUsed(chatTargetId: chatTargetId, isPersonaChat: isPersonaChat);
+    if (!OmiPlusMode.standalone) {
+      PlatformManager.instance.analytics.chatVoiceInputUsed(chatTargetId: chatTargetId, isPersonaChat: isPersonaChat);
+    }
 
     setShowTypingIndicator(true);
     var message = ServerMessage.empty();
     messages.add(message);
     var aiIndex = messages.length - 1;
     responseMessageId = message.id;
-    _registerChatTelemetryAttempt(responseMessageId, chatAttempt);
+    if (chatAttempt != null) _registerChatTelemetryAttempt(responseMessageId, chatAttempt);
     notifyListeners();
 
     // Voice response playback is triggered only from the Omi device-button
@@ -657,15 +700,22 @@ class MessageProvider extends ChangeNotifier {
 
     try {
       if (useOmiPlus) {
-        // v0.1 deliberately reuses Omi's separate transcription endpoint.
-        // Phase 2 swaps this call for an on-device STT engine without changing
-        // the assistant-routing contract.
+        // Omi+ button requests use the selected local/cloud STT policy before
+        // routing text through the subscription-backed assistant layer.
         final transcript = await transcribeOmiPlusCommand(
           file,
           localEnabled: preferences.omiPlusLocalSttEnabled,
         );
         final result = await sendOmiPlusAssistant(text: transcript, target: omiPlusTarget);
         message.text = result.text;
+        unawaited(
+          OmiPlusDriveService.instance.saveAssistantExchange(
+            input: transcript,
+            output: result.text,
+            target: omiPlusTarget.name,
+            source: 'voice',
+          ),
+        );
         if (onFirstChunkRecived != null) {
           onFirstChunkRecived();
         }
@@ -794,37 +844,48 @@ class MessageProvider extends ChangeNotifier {
     if (currentAppId == 'no_selected') {
       currentAppId = null;
     }
+    final preferences = SharedPreferencesUtil();
+    final omiPlusTarget = preferences.omiPlusAssistantTarget;
+    final useOmiPlus = preferences.omiPlusEnabled &&
+        omiPlusTarget != OmiPlusAssistantTarget.omi &&
+        omiPlusTarget != OmiPlusAssistantTarget.local;
 
-    String chatTargetId = currentAppId ?? 'omi';
+    String chatTargetId = useOmiPlus ? 'omi_plus_${omiPlusTarget.name}' : (currentAppId ?? 'omi');
     bool isPersonaChat = false;
 
-    PlatformManager.instance.analytics.chatMessageSent(
-      message: text,
-      includesFiles: uploadedFiles.isNotEmpty,
-      numberOfFiles: uploadedFiles.length,
-      chatTargetId: chatTargetId,
-      isPersonaChat: isPersonaChat,
-      isVoiceInput: _isNextMessageFromVoice,
-    );
+    if (!OmiPlusMode.standalone) {
+      PlatformManager.instance.analytics.chatMessageSent(
+        message: text,
+        includesFiles: uploadedFiles.isNotEmpty,
+        numberOfFiles: uploadedFiles.length,
+        chatTargetId: chatTargetId,
+        isPersonaChat: isPersonaChat,
+        isVoiceInput: _isNextMessageFromVoice,
+      );
+    }
     _isNextMessageFromVoice = false;
 
-    final chatAttempt = ProductTelemetry.instance.start(
-      ProductJourney.chatText,
-      surface: ProductSurface.chat,
-    );
+    final chatAttempt = OmiPlusMode.standalone
+        ? null
+        : ProductTelemetry.instance.start(
+            ProductJourney.chatText,
+            surface: ProductSurface.chat,
+          );
     var chatAttemptCompleted = false;
     late String responseMessageId;
     void completeChat(ProductOutcome outcome, {ProductFailure failure = ProductFailure.none}) {
       if (chatAttemptCompleted) return;
       chatAttemptCompleted = true;
-      _finishChatTelemetryAttempt(responseMessageId, outcome, failure: failure);
+      if (chatAttempt != null) {
+        _finishChatTelemetryAttempt(responseMessageId, outcome, failure: failure);
+      }
     }
 
     var message = ServerMessage.empty(appId: currentAppId);
     messages.add(message);
     final aiIndex = messages.length - 1;
     responseMessageId = message.id;
-    _registerChatTelemetryAttempt(responseMessageId, chatAttempt);
+    if (chatAttempt != null) _registerChatTelemetryAttempt(responseMessageId, chatAttempt);
     notifyListeners();
     final List<String> fileIds = retryFileIds ?? uploadedFiles.map((e) => e.id).toList();
     if (retryFileIds == null) {
@@ -846,6 +907,23 @@ class MessageProvider extends ChangeNotifier {
     }
 
     try {
+      if (useOmiPlus) {
+        final result = await sendOmiPlusAssistant(text: text, target: omiPlusTarget);
+        message.text = result.text;
+        unawaited(
+          OmiPlusDriveService.instance.saveAssistantExchange(
+            input: text,
+            output: result.text,
+            target: omiPlusTarget.name,
+            source: 'chat',
+          ),
+        );
+        completeChat(ProductOutcome.success);
+        setShowTypingIndicator(false);
+        notifyListeners();
+        return;
+      }
+
       await for (var chunk in (replyStreamOverride ?? sendMessageStreamServer)(
         text,
         appId: currentAppId,

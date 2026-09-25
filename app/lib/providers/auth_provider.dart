@@ -16,6 +16,7 @@ import 'package:omi/services/account_cutover/account_cutover_runtime.dart';
 import 'package:omi/services/auth_service.dart';
 import 'package:omi/services/auth/auth_token_result.dart';
 import 'package:omi/services/notifications.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/auth/clear_user_state.dart';
 import 'package:omi/utils/alerts/app_snackbar.dart';
 import 'package:omi/utils/l10n_extensions.dart';
@@ -55,7 +56,7 @@ class AuthenticationProvider extends BaseProvider {
   int get sessionExpirationGeneration => _sessionExpirationGeneration;
 
   AuthenticationProvider({bool initializeListeners = true}) {
-    if (initializeListeners) _initializeAuthListeners();
+    if (initializeListeners && !OmiPlusMode.standalone) _initializeAuthListeners();
   }
 
   void _initializeAuthListeners() {
@@ -124,6 +125,7 @@ class AuthenticationProvider extends BaseProvider {
   }
 
   bool isSignedIn() {
+    if (OmiPlusMode.standalone) return true;
     return !_requiresReauthentication && _auth.currentUser != null && !_auth.currentUser!.isAnonymous;
   }
 

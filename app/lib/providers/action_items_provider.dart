@@ -13,6 +13,8 @@ import 'package:omi/pages/action_items/services/action_item_export_service.dart'
 import 'package:omi/pages/settings/task_integrations_page.dart';
 import 'package:omi/services/integrations/apple_reminders_service.dart';
 import 'package:omi/services/notifications/action_item_notification_handler.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
+import 'package:omi/services/omi_plus/omi_plus_task_store.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 import 'package:omi/utils/logger.dart';
 import 'package:omi/utils/platform/platform_service.dart';
@@ -49,7 +51,12 @@ class ActionItemsProvider extends ChangeNotifier {
         _deleteActionItemRequest = deleteActionItemRequest ?? api.deleteActionItem,
         _updateActionItemRequest = updateActionItemRequest ?? api.updateActionItem,
         _actionItemsApi = actionItemsApi {
-    unawaited(_preload());
+    if (!OmiPlusMode.standalone) {
+      unawaited(_preload());
+    } else {
+      _standaloneLoad = _loadStandaloneTasks();
+      unawaited(_standaloneLoad);
+    }
   }
 
   final ActionItemsFetcher _getActionItems;
@@ -58,6 +65,7 @@ class ActionItemsProvider extends ChangeNotifier {
   final api.ActionItemsApi? _actionItemsApi;
   ApiViewState<List<ActionItemWithMetadata>> _listViewState = const ApiViewState(phase: ApiViewPhase.data);
   Future<void>? _initialLoad;
+  Future<void>? _standaloneLoad;
   bool _initialLoadCompleted = false;
   Future<void>? _homeTodayLoad;
   bool _homeDayLoaded = false;
@@ -214,6 +222,19 @@ class ActionItemsProvider extends ChangeNotifier {
     }).toList();
   }
 
+  Future<void> _loadStandaloneTasks() async {
+    _actionItems = await OmiPlusTaskStore.instance.load();
+    _homeDayItems = List.of(_actionItems);
+    _homeDayLoaded = true;
+    _initialLoadCompleted = true;
+    notifyListeners();
+  }
+
+  void _saveStandaloneTasks() {
+    if (!OmiPlusMode.standalone) return;
+    unawaited(OmiPlusTaskStore.instance.save(List.of(_actionItems)));
+  }
+
   Future<void> _preload() async {
     await ensureLoaded(showShimmer: true);
     await _migrateCategoryOrderFromPrefs();
@@ -221,6 +242,7 @@ class ActionItemsProvider extends ChangeNotifier {
 
   /// Shares the eager Home preload with the Tasks page's first visible load.
   Future<void> ensureLoaded({bool showShimmer = false}) {
+    if (OmiPlusMode.standalone) return _standaloneLoad ?? Future.value();
     if (_initialLoadCompleted) return Future.value();
 
     final existingLoad = _initialLoad;
@@ -238,6 +260,7 @@ class ActionItemsProvider extends ChangeNotifier {
   /// Home asks only for incomplete tasks due in the visible window, instead of
   /// paging the whole task history. Does not replace `_actionItems`.
   Future<void> ensureHomeTodayTasksLoaded({DateTime? now}) {
+    if (OmiPlusMode.standalone) return _standaloneLoad ?? Future.value();
     final existing = _homeTodayLoad;
     if (existing != null) return existing;
     if (_homeDayLoaded) return Future.value();
@@ -349,6 +372,10 @@ class ActionItemsProvider extends ChangeNotifier {
   }
 
   Future<bool> fetchActionItems({bool showShimmer = false}) async {
+    if (OmiPlusMode.standalone) {
+      await (_standaloneLoad ?? Future.value());
+      return true;
+    }
     var loaded = false;
     if (showShimmer) {
       setLoading(true);
@@ -450,6 +477,12 @@ class ActionItemsProvider extends ChangeNotifier {
 
   /// Returns whether the change reached the server; the caller decides what to tell the user.
   Future<bool> updateActionItemState(ActionItemWithMetadata item, bool newState) async {
+    if (OmiPlusMode.standalone) {
+      _findAndUpdateItemState(item.id, newState);
+      _saveStandaloneTasks();
+      notifyListeners();
+      return true;
+    }
     final attempt = ProductTelemetry.instance.start(
       ProductJourney.taskMutation,
       surface: ProductSurface.tasks,
@@ -495,6 +528,12 @@ class ActionItemsProvider extends ChangeNotifier {
 
   /// Returns whether the change reached the server; the caller decides what to tell the user.
   Future<bool> updateActionItemDescription(ActionItemWithMetadata item, String newDescription) async {
+    if (OmiPlusMode.standalone) {
+      _findAndUpdateItemDescription(item.id, newDescription);
+      _saveStandaloneTasks();
+      notifyListeners();
+      return true;
+    }
     try {
       final itemInList = _findAndUpdateItemDescription(item.id, newDescription);
       if (itemInList != null) {
@@ -528,6 +567,14 @@ class ActionItemsProvider extends ChangeNotifier {
 
   /// Returns whether the change reached the server; the caller decides what to tell the user.
   Future<bool> updateActionItemDueDate(ActionItemWithMetadata item, DateTime? dueDate) async {
+    if (OmiPlusMode.standalone) {
+      final index = _actionItems.indexWhere((i) => i.id == item.id);
+      if (index == -1) return false;
+      _actionItems[index] = _actionItems[index].copyWith(dueAt: dueDate, updatedAt: DateTime.now());
+      _saveStandaloneTasks();
+      notifyListeners();
+      return true;
+    }
     // Optimistic update: update locally first for instant UI feedback
     final index = _actionItems.indexWhere((i) => i.id == item.id);
     ActionItemWithMetadata? originalItem;
@@ -590,6 +637,23 @@ class ActionItemsProvider extends ChangeNotifier {
   }
 
   Future<int> clearTodayDeadlinesForIncompleteTasks() async {
+    if (OmiPlusMode.standalone) {
+      final now = DateTime.now();
+      final startOfTomorrow = DateTime(now.year, now.month, now.day + 1);
+      var changed = 0;
+      for (var i = 0; i < _actionItems.length; i++) {
+        final item = _actionItems[i];
+        if (!item.completed && item.dueAt != null && item.dueAt!.isBefore(startOfTomorrow)) {
+          _actionItems[i] = item.copyWith(dueAt: null, updatedAt: DateTime.now());
+          changed++;
+        }
+      }
+      if (changed > 0) {
+        _saveStandaloneTasks();
+        notifyListeners();
+      }
+      return changed;
+    }
     final now = DateTime.now();
     final startOfTomorrow = DateTime(now.year, now.month, now.day + 1);
 
@@ -646,6 +710,13 @@ class ActionItemsProvider extends ChangeNotifier {
   }
 
   Future<bool> deleteActionItem(ActionItemWithMetadata item) async {
+    if (OmiPlusMode.standalone) {
+      _actionItems.removeWhere((actionItem) => actionItem.id == item.id);
+      _homeDayItems.removeWhere((actionItem) => actionItem.id == item.id);
+      _saveStandaloneTasks();
+      notifyListeners();
+      return true;
+    }
     // Delete linked Apple Reminder if one exists
     _deleteAppleReminderIfLinked(item);
 
@@ -716,6 +787,12 @@ class ActionItemsProvider extends ChangeNotifier {
   /// back where it was. False when it was not staged.
   Future<bool> commitStagedDelete(String id) async {
     final staged = _stagedDeletes.remove(id);
+    if (OmiPlusMode.standalone) {
+      if (staged == null) return false;
+      _pendingDeletionIds.remove(id);
+      _saveStandaloneTasks();
+      return true;
+    }
     if (staged == null) return false;
     _deleteAppleReminderIfLinked(staged.item);
     var success = false;
@@ -762,6 +839,11 @@ class ActionItemsProvider extends ChangeNotifier {
 
     _actionItems.insert(0, optimisticItem);
     notifyListeners();
+
+    if (OmiPlusMode.standalone) {
+      _saveStandaloneTasks();
+      return optimisticItem;
+    }
 
     try {
       final newItem = await api.createActionItem(

@@ -17,6 +17,7 @@ import 'package:omi/pages/memories/widgets/memory_graph_page.dart';
 import 'package:omi/pages/settings/daily_summary_detail_page.dart';
 import 'package:omi/providers/conversation_provider.dart';
 import 'package:omi/providers/home_provider.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/ui/ui.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 import 'package:omi/utils/other/temp.dart';
@@ -42,11 +43,15 @@ class HomeContentPageState extends State<HomeContentPage> with AutomaticKeepAliv
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSummaries());
+    if (OmiPlusMode.standalone) {
+      _loadingSummaries = false;
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadSummaries());
+    }
   }
 
   Future<void> _loadSummaries() async {
-    if (!mounted) return;
+    if (!mounted || OmiPlusMode.standalone) return;
     setState(() => _loadingSummaries = true);
     final result = await getDailySummaries(limit: 3, offset: 0);
     if (mounted) {

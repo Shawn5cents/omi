@@ -28,6 +28,7 @@ import 'package:omi/services/integrations/asana_service.dart';
 import 'package:omi/services/integrations/clickup_service.dart';
 import 'package:omi/services/integrations/google_tasks_service.dart';
 import 'package:omi/services/notifications.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/services/integrations/todoist_service.dart';
 import 'package:omi/utils/alerts/app_snackbar.dart';
 import 'package:omi/utils/other/temp.dart';
@@ -355,6 +356,14 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _initializeProviders() async {
     if (!mounted) return;
+    if (OmiPlusMode.standalone) {
+      // Standalone Omi+ deliberately skips Omi subscription, app, people,
+      // integration, message-refresh, analytics identity, and FCM startup.
+      // Local caches remain available to the UI while Grizzy owns AI/cloud.
+      context.read<MessageProvider>().setMessagesFromCache();
+      context.read<AppProvider>().setAppsFromCache();
+      return;
+    }
     final isSignedIn = context.read<AuthenticationProvider>().isSignedIn();
     if (isSignedIn) {
       final homeProvider = context.read<HomeProvider>();

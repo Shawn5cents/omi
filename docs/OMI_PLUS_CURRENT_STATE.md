@@ -11,20 +11,24 @@ Date: 2026-09-24
 - Clean Omi+ worktree created from current upstream.
 - Full roadmap documented.
 - Architecture and ownership boundaries documented.
-- Additive Omi+ settings persist in SharedPreferences and survive sign-out as device behavior.
-- Provider targets defined: Omi, Auto, ChatGPT, Claude, Gemini, Local, All.
-- Defaults fail closed to stock Omi and Omi+ disabled.
-- Device Settings exposes Omi+ only for Omi hardware; Local assistant is intentionally not selectable yet.
-- Explicit device-button voice requests can use Omi+ router -> Grizzy -> subscription client -> Omi voice playback.
-- Omi+ command STT can now be switched to the existing on-device Whisper engine; this applies only to explicit Omi+ button requests.
-- Local STT is strict opt-in: if a downloaded Whisper model is unavailable or local transcription fails, Omi+ does not silently fall back to Omi cloud STT.
-- Ambient Omi capture, summaries, memories, tasks, apps, sync and normal chat remain on stock Omi paths.
-- Grizzy read-only assistant branch: feature/omi-plus-assistant at 02e6e45.
-- Grizzy verification: 74/74 tests PASS and npm run check PASS.
-- Live subscription routing proven for Codex, Claude and Antigravity; public omi.nicholsai.com Auto routing also proven.
-- Mobile targeted gate: prior 24/24 PASS; new local-STT/provider gate 9/9 PASS and Device Settings/local-STT gate 9/9 PASS.
-- Static analysis of Omi+ STT, message provider and Device Settings: PASS with no issues.
-- Android dev APK compile with the private Omi+ assistant route and local-STT slice: PASS.
+- Stock Omi remains available as the production package; the private dev flavor is the Omi+ standalone build.
+- Provider targets remain defined: Omi, Auto, ChatGPT, Claude, Gemini, Local, All. Stock mode keeps stock defaults; standalone mode forces Omi+ ON, Auto subscription routing and local STT.
+- Standalone startup bypasses Omi/Firebase identity, FCM, Crashlytics, Intercom, subscription/paywall bootstrap and Omi cloud account initialization.
+- Explicit pendant-button requests and normal typed chat route through Grizzy subscription clients instead of Omi AI.
+- Live subscription routing is proven for Codex/ChatGPT, Claude Code and Antigravity/Gemini.
+- Omi+ standalone transcription uses the downloaded on-device Whisper model and never silently falls back to Omi cloud STT.
+- Standalone capture resolution blocks Omi managed transcription sockets and forces local on-device STT.
+- Voice output in standalone mode bypasses Omi cloud TTS and uses the phone/local fallback path.
+- Google Drive is the user-owned cloud boundary through Grizzy. The Drive tree is Omi+/Conversations, Audio, Memories, Tasks, Attachments, Backups and Exports.
+- Assistant exchanges and attachments use the bounded Drive bridge. Tasks persist locally and mirror to Omi+/Tasks; standalone task mutations never call the Omi API.
+- Public Drive writes use the already-exposed authenticated /omi/assistant endpoint in storage mode; Google credentials remain only on the NucBox.
+- Phone-call provider no longer performs Omi verified-number cloud preload in standalone mode.
+- Stock regression gate: 13/13 targeted tests PASS.
+- Standalone replacement gate: 8/8 targeted tests PASS.
+- Grizzy branch feature/omi-plus-assistant is at 0f750a9 with 78/78 tests PASS and npm run check PASS.
+- Public subscription assistant routing and public Google Drive task writes both return HTTP 200.
+- Android standalone dev APK compile: PASS.
+- Pixel proof completed before the USB cable fault: stock Omi and Omi+ dev coexist, and Omi+ retained files/models/ggml-tiny.bin (74 MB).
 
 ## Existing related work preserved
 - /data/repos/omi-chatgpt: non-destructive Omi -> ChatGPT MCP bridge.
@@ -32,12 +36,15 @@ Date: 2026-09-24
 - /data/repos/omi-le-audio: experimental LE Audio firmware; remains separate and non-default.
 
 ## Next vertical slice
-Physically validate the private APK with the Omi pendant and downloaded Whisper model on Android. Then benchmark Omi's existing Whisper path against LiteRT/Edge candidates such as Parakeet and Qwen3-ASR behind the same Omi+ STT interface; only replace Whisper if measured latency, accuracy and battery results justify it.
+Replace Omi conversation processing and memories with local-first stores plus subscription-generated structure, mirrored to Google Drive. Reuse the existing Omi Conversations/Memories UI instead of creating parallel screens. After the Pixel USB link is stable again, reinstall the current standalone APK and physically validate pendant -> local Whisper -> Grizzy -> local TTS.
 
 ## Release gate
-Do not merge into main until:
-1. stock Android build passes,
-2. Omi+ settings tests pass,
-3. provider defaults remain stock Omi,
-4. disabling Omi+ restores stock behavior,
-5. no unrelated upstream files are modified.
+Do not merge the standalone work into a distributable release until:
+1. stock Android mode still passes its regression gate,
+2. standalone mode boots without Firebase/Omi cloud identity,
+3. no ambient or command audio is silently sent to Omi cloud,
+4. ChatGPT/Claude/Gemini subscription routes pass live tests,
+5. conversations, memories, tasks and attachments have local persistence plus Google Drive recovery,
+6. the Pixel + pendant hardware path passes end to end,
+7. the prototype embedded credential is replaced by revocable device enrollment before wider distribution,
+8. no unrelated upstream files are modified.

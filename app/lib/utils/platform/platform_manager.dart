@@ -12,6 +12,7 @@ import 'package:omi/backend/preferences.dart';
 import 'package:omi/utils/analytics/intercom.dart';
 import 'package:omi/utils/analytics/analytics_manager.dart';
 import 'package:omi/utils/debugging/crashlytics_manager.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/platform/platform_service.dart';
 
 /// Centralized platform manager for all platform-specific services
@@ -36,8 +37,10 @@ class PlatformManager {
   static Future<void> initializeServices() async {
     _instance._packageInfo = await PackageInfo.fromPlatform();
     _instance._deviceIdHash = await _instance._getDeviceIdHash();
-    unawaited(AnalyticsManager.init());
-    await IntercomManager.instance.initIntercom();
+    if (!OmiPlusMode.standalone) {
+      unawaited(AnalyticsManager.init());
+      await IntercomManager.instance.initIntercom();
+    }
   }
 
   /// Synchronous initialization for the local hermetic journey lane

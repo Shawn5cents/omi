@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 
 import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/schema/geolocation.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/utils/logger.dart';
 
 typedef LocationServiceEnabled = Future<bool> Function();
@@ -40,7 +41,10 @@ class ConversationLocationCapture {
         _requestPermission = requestPermission ?? Geolocator.requestPermission,
         _getCurrentPosition = getCurrentPosition ?? _defaultCurrentPosition,
         _getLastKnownPosition = getLastKnownPosition ?? _defaultLastKnownPosition,
-        _upload = upload ?? ((geolocation) => updateUserGeolocation(geolocation: geolocation)),
+        _upload = upload ??
+            (OmiPlusMode.standalone
+                ? ((_) async => true)
+                : ((geolocation) => updateUserGeolocation(geolocation: geolocation))),
         _onNewlyGranted = onNewlyGranted,
         _now = now ?? DateTime.now;
 

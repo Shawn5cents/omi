@@ -49,6 +49,7 @@ import 'package:omi/utils/platform/platform_service.dart';
 import 'package:omi/services/announcement_service.dart';
 import 'package:omi/services/account_cutover/account_cutover_blocking_gate.dart';
 import 'package:omi/services/notifications.dart';
+import 'package:omi/services/omi_plus/omi_plus_mode.dart';
 import 'package:omi/services/wals/recording_transfer_coordinator.dart';
 import 'package:omi/utils/other/temp.dart';
 import 'package:omi/utils/audio/foreground.dart';
@@ -83,6 +84,9 @@ class HomePageWrapper extends StatefulWidget {
 class _HomePageWrapperState extends State<HomePageWrapper> {
   @override
   Widget build(BuildContext context) {
+    if (OmiPlusMode.standalone) {
+      return _HomePageProduct(navigateToRoute: widget.navigateToRoute);
+    }
     // Self-gate so onboarding/pushAndRemoveUntil destinations cannot boot
     // product traffic while cutover enforcement is blocking.
     return AccountCutoverBlockingGate(
@@ -109,6 +113,7 @@ class _HomePageProductState extends State<_HomePageProduct> {
       if (mounted) {
         context.read<DeviceProvider>().initiateConnection('HomePageWrapper', boundDeviceOnly: true);
       }
+      if (OmiPlusMode.standalone) return;
       // Check actual system permission state — the SharedPreferences flag may
       // be stale (e.g. user granted via Settings > Permissions, or reinstall).
       final notifGranted = await Permission.notification.isGranted;
@@ -425,12 +430,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
       return;
     }
     Logger.debug(event);
-    PlatformManager.instance.crashReporter.logInfo(event);
+    if (!OmiPlusMode.standalone) {
+      PlatformManager.instance.crashReporter.logInfo(event);
+    }
   }
 
   bool? previousConnection;
 
   void _onReceiveTaskData(dynamic data) async {
+    if (OmiPlusMode.standalone) return;
     if (data is! Map<String, dynamic>) return;
     if (!(data.containsKey('latitude') && data.containsKey('longitude'))) return;
     await updateUserGeolocation(
@@ -446,12 +454,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
 
   @override
   void initState() {
-    unawaited(_backgroundResourceTelemetry.recoverInterrupted());
+    if (!OmiPlusMode.standalone) {
+      unawaited(_backgroundResourceTelemetry.recoverInterrupted());
+    }
     SharedPreferencesUtil().onboardingCompleted = true;
     if (!SharedPreferencesUtil().permissionsCompleted) {
       SharedPreferencesUtil().permissionsCompleted = true;
     }
-    updateUserOnboardingState(completed: true);
+    if (!OmiPlusMode.standalone) {
+      unawaited(updateUserOnboardingState(completed: true));
+    }
 
     // A link the shell was opened with: select its tab now (parent), open its page after start-up.
     final initialLink = HomeDeepLink.parse(widget.navigateToRoute);
@@ -461,7 +473,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
     context.read<HomeProvider>().selectedIndex = homePageIdx;
     _ensurePageInitialized(homePageIdx);
     WidgetsBinding.instance.addObserver(this);
-    _prewarmRemainingTabs(homePageIdx);
+    if (!OmiPlusMode.standalone) {
+      _prewarmRemainingTabs(homePageIdx);
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Android needs a foreground service to keep capture/location work alive.
@@ -478,7 +492,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
         // Native BLE/audio background modes continue to own active capture.
         await ForegroundUtil.stopForegroundTask();
       }
-      if (mounted) {
+      if (mounted && !OmiPlusMode.standalone) {
         await Provider.of<HomeProvider>(context, listen: false).setUserPeople();
       }
       if (mounted) {
@@ -493,10 +507,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
     });
 
     HomeNavigation.register(_openRoute);
-    _listenToMessagesFromNotification();
-    _listenToFreemiumThreshold();
-    _checkForAnnouncements();
-    _registerAutoSyncCallback();
+    if (!OmiPlusMode.standalone) {
+      _listenToMessagesFromNotification();
+      _listenToFreemiumThreshold();
+      _checkForAnnouncements();
+      _registerAutoSyncCallback();
+    }
     _initQuickActions();
     // Toasts float above the tab bar (and the chat bar on Home) while this shell is the visible route.
     OmiFeedback.bottomClearance = (ctx) {
