@@ -40,7 +40,7 @@ class OmiPlusReliableRpc {
         _supabaseBaseUri = supabaseBaseUri ??
             Uri.parse(const String.fromEnvironment(
               'OMI_PLUS_SUPABASE_URL',
-              defaultValue: 'https://vndrhuixllqtuakdrqkm.supabase.co',
+              defaultValue: 'https://mearolqygzcubxkqpbwo.supabase.co',
             )),
         _deviceToken = deviceToken ?? const String.fromEnvironment('OMI_PLUS_ASSISTANT_TOKEN'),
         pollInterval = pollInterval ?? const Duration(milliseconds: 650),
