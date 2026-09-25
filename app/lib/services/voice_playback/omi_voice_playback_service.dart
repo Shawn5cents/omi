@@ -24,14 +24,18 @@ const int _chunkMinChars = 320;
 const int _chunkIdealChars = 520;
 const int _chunkMaxChars = 800;
 
+const String _omiPlusPreferredTtsEngine = 'dev.ahmedmohamed.hayaitts';
+
 class OmiVoicePlaybackService {
   OmiVoicePlaybackService._();
   static final OmiVoicePlaybackService instance = OmiVoicePlaybackService._();
 
   final AudioPlayer _player = AudioPlayer(handleInterruptions: false);
   final FlutterTts _fallbackTts = FlutterTts();
+  final FlutterTts _systemTts = FlutterTts();
 
   bool _initialized = false;
+  bool _usingOmiPlusPreferredTts = false;
   String? _activeMessageId;
 
   // What the client already sent to synthesize, measured against the cumulative
@@ -83,10 +87,30 @@ class OmiVoicePlaybackService {
     });
 
     try {
+      if (OmiPlusMode.standalone && defaultTargetPlatform == TargetPlatform.android) {
+        final engines = await _fallbackTts.getEngines;
+        final names = engines is List ? engines.map((e) => e.toString()).toSet() : const <String>{};
+        if (names.contains(_omiPlusPreferredTtsEngine)) {
+          await _fallbackTts.setEngine(_omiPlusPreferredTtsEngine);
+          _usingOmiPlusPreferredTts = true;
+          Logger.log('OmiVoicePlayback: using HayaiTTS/Piper offline engine');
+        } else {
+          Logger.log('OmiVoicePlayback: HayaiTTS unavailable; using Android system TTS');
+        }
+      }
+      final preferredLanguage = SharedPreferencesUtil().userPrimaryLanguage.trim();
+      final language = preferredLanguage.isEmpty || preferredLanguage == 'multi' ? 'en-US' : preferredLanguage;
+      await _fallbackTts.setLanguage(language);
       await _fallbackTts.setSpeechRate(0.5);
       await _fallbackTts.setVolume(1.0);
       await _fallbackTts.setPitch(1.0);
-    } catch (_) {}
+      await _systemTts.setLanguage(language);
+      await _systemTts.setSpeechRate(0.5);
+      await _systemTts.setVolume(1.0);
+      await _systemTts.setPitch(1.0);
+    } catch (e) {
+      Logger.debug('OmiVoicePlayback: TTS engine setup failed: $e');
+    }
   }
 
   /// Start a new response lifecycle. Cancels any prior in-flight playback.
@@ -205,6 +229,9 @@ class OmiVoicePlaybackService {
     try {
       await _fallbackTts.stop();
     } catch (_) {}
+    try {
+      await _systemTts.stop();
+    } catch (_) {}
     await _deactivateSession();
   }
 
@@ -302,9 +329,21 @@ class OmiVoicePlaybackService {
 
   Future<void> _speakFallback(String text) async {
     try {
-      await _fallbackTts.speak(text);
+      final result = await _fallbackTts.speak(text);
+      if (_usingOmiPlusPreferredTts && (result == 0 || result == false)) {
+        throw StateError('preferred TTS engine rejected synthesis');
+      }
+      return;
     } catch (e) {
-      Logger.debug('flutter_tts fallback failed: $e');
+      Logger.debug('preferred flutter_tts engine failed: $e');
+    }
+
+    if (!_usingOmiPlusPreferredTts) return;
+    try {
+      Logger.log('OmiVoicePlayback: falling back to Android system TTS');
+      await _systemTts.speak(text);
+    } catch (e) {
+      Logger.debug('Android system TTS fallback failed: $e');
     }
   }
 

@@ -18,7 +18,7 @@ Date: 2026-09-25
 - Live subscription routing is proven for Codex/ChatGPT, Claude Code and Antigravity/Gemini.
 - Omi+ standalone transcription uses the downloaded on-device Whisper model and never silently falls back to Omi cloud STT.
 - Standalone capture resolution blocks Omi managed transcription sockets and forces local on-device STT.
-- Voice output in standalone mode bypasses Omi cloud TTS and uses the phone/local fallback path.
+- Voice output in standalone mode bypasses Omi cloud TTS. Omi+ now prefers the separate HayaiTTS Android engine with the verified local Piper Amy voice and automatically falls back to the untouched Android system TTS engine if Hayai is unavailable or rejects synthesis.
 - Google Drive is the user-owned cloud boundary through Grizzy. The Drive tree is Omi+/Conversations, Audio, Memories, Tasks, Attachments, Backups and Exports.
 - Assistant exchanges and attachments use the bounded Drive bridge. Tasks persist locally and mirror to Omi+/Tasks; standalone task mutations never call the Omi API.
 - Public Drive writes use the bounded Grizzy storage path; Google credentials remain only on the NucBox.
@@ -33,8 +33,11 @@ Date: 2026-09-25
 - Command Whisper remains warm between button requests and prefers the configured/device language instead of language auto-detection when possible.
 - Standalone local-STT gate: 4/4 PASS. Stock/command STT regression gate: 14/14 PASS. Durable Edge client gate: 2/2 PASS. Grizzy worker reliability gate: 2/2 PASS; `npm run check` PASS.
 - Supabase security advisor no longer reports Omi-specific public SECURITY DEFINER warnings after gateway lockdown.
-- Android static analysis of the hardened slice: 0 issues. Standalone dev APK compile: PASS.
-- Latest Pixel install: PASS; pendant auto-reconnects; local Whisper starts; launch trace has no Firebase, Omi WebSocket or composite Omi fallback.
+- Android static analysis of the hardened slice: 0 errors. Standalone dev APK compile: PASS.
+- HayaiTTS v2.5.1 is installed separately on the Pixel as an Android TTS engine; Omi+ discovers it via the standard TTS service query and does not embed/link its GPL runtime.
+- Verified voice: `vits-piper-en_US-amy-low` (~67 MB). The smaller `vits-piper-en_US-amy-low-int8` catalog entry is broken in HayaiTTS v2.5.1 (`Bundle missing required files: model.onnx`) and must not be selected.
+- Pixel hardware TTS integration test: PASS; HayaiTTS is discoverable and Piper Amy synthesizes offline. Android system TTS remains the fallback.
+- Latest Pixel standalone install: PASS; pendant auto-reconnects; local Whisper starts; launch trace has no Firebase, Omi WebSocket or composite Omi fallback.
 
 ## Existing related work preserved
 - /data/repos/omi-chatgpt: non-destructive Omi -> ChatGPT MCP bridge.

@@ -29,9 +29,11 @@ Omi pendant + Omi app UX + local speech + Grizzy + subscription-backed ChatGPT/C
 - Measure word error rate, command latency, battery and thermals on Pixel before changing the default local engine.
 
 ### Phase 3 - Local TTS
-- Add voice output interface.
-- Baseline Android system TTS.
-- Evaluate KittenTTS Nano and Qwen3-TTS.
+- Use Android's standard TTS interface so voice engines remain replaceable.
+- Preferred standalone engine: HayaiTTS with local Piper Amy; keep Android system TTS as automatic fallback.
+- Keep HayaiTTS as a separate Android engine rather than embedding its native GPL runtime into Omi+.
+- The verified Piper voice is `vits-piper-en_US-amy-low`; avoid HayaiTTS v2.5.1's broken Amy INT8 catalog entry.
+- Benchmark higher-quality Hayai/sherpa-onnx voices such as Kokoro or Kitten only after the Piper path is stable.
 - Stream answers to Bluetooth earbuds.
 - Never route pendant as an output device.
 

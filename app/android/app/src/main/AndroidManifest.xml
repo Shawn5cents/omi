@@ -76,6 +76,13 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
+    <!-- Android 11+ package visibility: allow Omi+ to discover installed TTS engines. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <!-- Add android:stopWithTask option only when necessary. -->
     <application
         android:name=".MyApp"
